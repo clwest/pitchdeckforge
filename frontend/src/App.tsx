@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react'
 import {
   Presentation, Plus, ChevronRight, ChevronLeft, ArrowLeft,
   LogIn, LogOut, FileText, Sparkles, Copy, Clock,
+  Download, RefreshCw, Pencil, Check, X, Loader2,
+  CreditCard, Share2, Lock, Zap, Users, Star,
 } from 'lucide-react'
+import { jsPDF } from 'jspdf'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8004/api'
 
@@ -13,7 +16,7 @@ interface Deck extends DeckSummary { slides: Slide[]; tl_dr: string; script: str
 interface Slide { title: string; bullets: string[]; notes: string }
 interface AuthUser { id: string; email: string; name: string }
 
-type View = 'home' | 'projects' | 'project-detail' | 'brief-form' | 'deck-view' | 'login' | 'register'
+type View = 'home' | 'projects' | 'project-detail' | 'brief-form' | 'deck-view' | 'login' | 'register' | 'pricing' | 'shared-deck'
 
 function authHeaders(token: string) {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
@@ -94,6 +97,75 @@ export default function App() {
     if (r.ok) { setActiveDeck(await r.json()); setView('deck-view') }
   }
 
+  async function regenerateSlide(deckId: string, slideIndex: number, instruction: string = '') {
+    if (!token) return null
+    const r = await fetch(`${API}/decks/${deckId}/regenerate-slide`, {
+      method: 'POST', headers: authHeaders(token),
+      body: JSON.stringify({ slide_index: slideIndex, instruction })
+    })
+    if (r.ok) {
+      const data = await r.json()
+      if (activeDeck && activeDeck.id === deckId) {
+        const newSlides = [...activeDeck.slides]
+        newSlides[slideIndex] = data.slide
+        setActiveDeck({ ...activeDeck, slides: newSlides })
+      }
+      return data.slide
+    }
+    return null
+  }
+
+  async function addBonusSlide(deckId: string, slideType: string) {
+    if (!token) return null
+    const r = await fetch(`${API}/decks/${deckId}/bonus-slide`, {
+      method: 'POST', headers: authHeaders(token),
+      body: JSON.stringify({ slide_type: slideType })
+    })
+    if (r.ok) {
+      const data = await r.json()
+      if (activeDeck && activeDeck.id === deckId) {
+        const newSlides = [...activeDeck.slides]
+        newSlides.splice(data.index, 0, data.slide)
+        setActiveDeck({ ...activeDeck, slides: newSlides })
+      }
+      return data
+    }
+    return null
+  }
+
+  async function finalizeDeck(deckId: string) {
+    if (!token) return false
+    const r = await fetch(`${API}/decks/${deckId}/finalize`, {
+      method: 'POST', headers: authHeaders(token),
+    })
+    if (r.ok) {
+      const data = await r.json()
+      if (activeDeck && activeDeck.id === deckId) {
+        setActiveDeck({ ...activeDeck, status: 'final' })
+      }
+      return data.share_token || null
+    }
+    return false
+  }
+
+  async function updateSlide(deckId: string, slideIndex: number, updates: Partial<Slide>) {
+    if (!token) return false
+    const r = await fetch(`${API}/decks/${deckId}/slides`, {
+      method: 'PATCH', headers: authHeaders(token),
+      body: JSON.stringify({ slide_index: slideIndex, ...updates })
+    })
+    if (r.ok) {
+      const data = await r.json()
+      if (activeDeck && activeDeck.id === deckId) {
+        const newSlides = [...activeDeck.slides]
+        newSlides[slideIndex] = data.slide
+        setActiveDeck({ ...activeDeck, slides: newSlides })
+      }
+      return true
+    }
+    return false
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
       <nav className="border-b border-gray-800 bg-[#0a0a0f]/80 backdrop-blur-sm sticky top-0 z-50">
@@ -102,6 +174,7 @@ export default function App() {
             <Presentation size={20} className="text-orange-500" /> PitchDeckForge
           </button>
           <div className="flex items-center gap-4">
+            <button onClick={() => navigate('pricing')} className="text-sm text-gray-400 hover:text-white transition">Pricing</button>
             {token && user ? (
               <>
                 <button onClick={() => navigate('projects')} className="text-sm text-gray-400 hover:text-white transition">Projects</button>
@@ -123,7 +196,8 @@ export default function App() {
         {view === 'project-detail' && activeProject && (
           <ProjectDetailPage project={activeProject} onCreateBrief={createBrief} onGenerateDeck={generateDeck} onOpenDeck={openDeck} onBack={() => navigate('projects')} loading={loading} />
         )}
-        {view === 'deck-view' && activeDeck && <DeckViewPage deck={activeDeck} onBack={() => activeProject ? openProject(activeProject.id) : navigate('projects')} />}
+        {view === 'deck-view' && activeDeck && <DeckViewPage deck={activeDeck} onBack={() => activeProject ? openProject(activeProject.id) : navigate('projects')} onRegenerateSlide={regenerateSlide} onUpdateSlide={updateSlide} onAddBonusSlide={addBonusSlide} onFinalize={finalizeDeck} />}
+        {view === 'pricing' && <PricingPage onNavigate={navigate} />}
         {view === 'login' && <AuthPage mode="login" onLogin={handleLogin} onSwitch={() => navigate('register')} />}
         {view === 'register' && <AuthPage mode="register" onRegister={handleRegister} onSwitch={() => navigate('login')} />}
       </main>
@@ -135,23 +209,30 @@ export default function App() {
 
 function HomePage({ onNavigate }: { onNavigate: (v: View) => void }) {
   return (
-    <div className="space-y-12">
+    <div className="space-y-16">
       <div className="text-center py-16 space-y-6">
         <h1 className="text-5xl font-bold bg-gradient-to-r from-orange-400 via-red-400 to-pink-400 bg-clip-text text-transparent">
           Pitch Decks, Forged by AI
         </h1>
         <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-          Describe your startup. Get a polished 10-slide pitch deck, executive summary, and 90-second demo script in seconds.
+          Describe your startup. Get a polished pitch deck with market research, investor Q&A, and competitive analysis — in seconds, not weeks.
         </p>
-        <button onClick={() => onNavigate('projects')} className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-3 rounded-xl text-lg font-medium transition flex items-center gap-2 mx-auto">
-          Get Started <ChevronRight size={20} />
-        </button>
+        <div className="flex gap-3 justify-center">
+          <button onClick={() => onNavigate('projects')} className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-3 rounded-xl text-lg font-medium transition flex items-center gap-2">
+            Start Free <ChevronRight size={20} />
+          </button>
+          <button onClick={() => onNavigate('pricing')} className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-3 rounded-xl text-lg font-medium transition">
+            View Pricing
+          </button>
+        </div>
       </div>
+
+      {/* How it works */}
       <div className="grid md:grid-cols-3 gap-6">
         {[
           { title: 'Describe Your Startup', desc: 'Fill in your problem, solution, traction, team, and raise amount.', icon: <FileText size={24} /> },
-          { title: 'AI Generates Your Deck', desc: '10 slides with bullets, speaker notes, TL;DR, and pitch script.', icon: <Sparkles size={24} /> },
-          { title: 'Edit & Export', desc: 'Tweak individual slides, regenerate content, and export as PDF.', icon: <Presentation size={24} /> },
+          { title: 'AI Generates Your Deck', desc: '10+ slides with speaker notes, executive summary, and pitch script.', icon: <Sparkles size={24} /> },
+          { title: 'Edit, Enhance & Export', desc: 'Edit slides inline, add bonus slides, regenerate content, export as PDF.', icon: <Presentation size={24} /> },
         ].map(s => (
           <div key={s.title} className="bg-[#12121a] border border-gray-800 rounded-xl p-6 text-center">
             <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center mx-auto mb-4 text-orange-400">{s.icon}</div>
@@ -159,6 +240,29 @@ function HomePage({ onNavigate }: { onNavigate: (v: View) => void }) {
             <p className="text-sm text-gray-400">{s.desc}</p>
           </div>
         ))}
+      </div>
+
+      {/* Feature highlights */}
+      <div>
+        <h2 className="text-2xl font-bold text-white text-center mb-8">More Than Just Slides</h2>
+        <div className="grid md:grid-cols-2 gap-4 max-w-3xl mx-auto">
+          {[
+            { label: '4 Template Styles', desc: 'Clean, Investor Focus, Growth Story, Product-First — each with tuned AI prompts', color: 'text-orange-400' },
+            { label: 'Market Context Slide', desc: 'AI-researched TAM, trends, and timing signals injected into your deck', color: 'text-blue-400' },
+            { label: 'Investor Q&A Slide', desc: 'Top VC objections with rebuttals — written by a veteran investor persona', color: 'text-amber-400' },
+            { label: 'Competitive Landscape', desc: 'Key competitors, positioning analysis, and your moat — auto-generated', color: 'text-purple-400' },
+            { label: 'Per-Slide Regeneration', desc: 'Don\'t like a slide? Regenerate it with custom instructions', color: 'text-green-400' },
+            { label: '90-Second Pitch Script', desc: 'A spoken pitch script ready for demo day or investor calls', color: 'text-pink-400' },
+          ].map(f => (
+            <div key={f.label} className="flex gap-3 items-start bg-[#12121a] border border-gray-800 rounded-lg p-4">
+              <Check size={16} className={`${f.color} mt-0.5 shrink-0`} />
+              <div>
+                <div className="text-sm font-medium text-white">{f.label}</div>
+                <div className="text-xs text-gray-500">{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -311,11 +415,159 @@ function ProjectDetailPage({ project, onCreateBrief, onGenerateDeck, onOpenDeck,
 
 // ── Deck Viewer ───────────────────────────────────────────────────────────
 
-function DeckViewPage({ deck, onBack }: { deck: Deck; onBack: () => void }) {
+function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBonusSlide, onFinalize }: {
+  deck: Deck; onBack: () => void
+  onRegenerateSlide: (deckId: string, slideIndex: number, instruction?: string) => Promise<Slide | null>
+  onUpdateSlide: (deckId: string, slideIndex: number, updates: Partial<Slide>) => Promise<boolean>
+  onAddBonusSlide: (deckId: string, slideType: string) => Promise<{ slide: Slide; index: number } | null>
+  onFinalize: (deckId: string) => Promise<string | false>
+}) {
   const [currentSlide, setCurrentSlide] = useState(0)
   const [activeTab, setActiveTab] = useState<'slides' | 'tldr' | 'script'>('slides')
+  const [regenerating, setRegenerating] = useState(false)
+  const [regenInstruction, setRegenInstruction] = useState('')
+  const [showRegenInput, setShowRegenInput] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editBullets, setEditBullets] = useState<string[]>([])
+  const [editNotes, setEditNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [addingBonus, setAddingBonus] = useState<string | null>(null)
+  const [finalizing, setFinalizing] = useState(false)
+  const [shareToken, setShareToken] = useState<string | null>(null)
+  const [showShareToast, setShowShareToast] = useState(false)
 
   const slide = deck.slides[currentSlide]
+  const isFinal = deck.status === 'final'
+
+  function startEditing() {
+    setEditTitle(slide.title)
+    setEditBullets([...slide.bullets])
+    setEditNotes(slide.notes || '')
+    setEditing(true)
+  }
+
+  async function saveEdit() {
+    setSaving(true)
+    await onUpdateSlide(deck.id, currentSlide, { title: editTitle, bullets: editBullets, notes: editNotes })
+    setSaving(false)
+    setEditing(false)
+  }
+
+  async function handleRegenerate() {
+    setRegenerating(true)
+    await onRegenerateSlide(deck.id, currentSlide, regenInstruction)
+    setRegenerating(false)
+    setShowRegenInput(false)
+    setRegenInstruction('')
+  }
+
+  async function handleFinalize() {
+    setFinalizing(true)
+    const token = await onFinalize(deck.id)
+    if (token) setShareToken(token as string)
+    setFinalizing(false)
+  }
+
+  function copyShareLink() {
+    const link = shareToken
+      ? `${window.location.origin}?share=${shareToken}`
+      : `${window.location.origin}?deck=${deck.id}`
+    navigator.clipboard.writeText(link)
+    setShowShareToast(true)
+    setTimeout(() => setShowShareToast(false), 2000)
+  }
+
+  async function handleAddBonus(slideType: string) {
+    setAddingBonus(slideType)
+    const result = await onAddBonusSlide(deck.id, slideType)
+    if (result) setCurrentSlide(result.index)
+    setAddingBonus(null)
+  }
+
+  async function exportPDF() {
+    setExporting(true)
+    try {
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [960, 540] })
+      const slides = deck.slides
+
+      for (let i = 0; i < slides.length; i++) {
+        if (i > 0) pdf.addPage([960, 540], 'landscape')
+        const s = slides[i]
+
+        // Dark background
+        pdf.setFillColor(18, 18, 26)
+        pdf.rect(0, 0, 960, 540, 'F')
+
+        // Slide number
+        pdf.setTextColor(234, 88, 12)
+        pdf.setFontSize(10)
+        pdf.text(`Slide ${i + 1} of ${slides.length}`, 48, 40)
+
+        // Title
+        pdf.setTextColor(255, 255, 255)
+        pdf.setFontSize(28)
+        pdf.text(s.title || '', 48, 80)
+
+        // Bullets
+        pdf.setTextColor(209, 213, 219)
+        pdf.setFontSize(14)
+        let y = 120
+        for (const bullet of (s.bullets || [])) {
+          const lines = pdf.splitTextToSize(`  •  ${bullet}`, 860)
+          pdf.text(lines, 48, y)
+          y += lines.length * 20 + 8
+        }
+
+        // Speaker notes page
+        if (s.notes) {
+          pdf.addPage([960, 540], 'landscape')
+          pdf.setFillColor(10, 10, 15)
+          pdf.rect(0, 0, 960, 540, 'F')
+          pdf.setTextColor(156, 163, 175)
+          pdf.setFontSize(10)
+          pdf.text(`Speaker Notes — Slide ${i + 1}: ${s.title}`, 48, 40)
+          pdf.setTextColor(209, 213, 219)
+          pdf.setFontSize(13)
+          const noteLines = pdf.splitTextToSize(s.notes, 860)
+          pdf.text(noteLines, 48, 70)
+        }
+      }
+
+      // TL;DR page
+      if (deck.tl_dr) {
+        pdf.addPage([960, 540], 'landscape')
+        pdf.setFillColor(18, 18, 26)
+        pdf.rect(0, 0, 960, 540, 'F')
+        pdf.setTextColor(234, 88, 12)
+        pdf.setFontSize(22)
+        pdf.text('Executive Summary', 48, 60)
+        pdf.setTextColor(209, 213, 219)
+        pdf.setFontSize(13)
+        const tldrLines = pdf.splitTextToSize(deck.tl_dr, 860)
+        pdf.text(tldrLines, 48, 100)
+      }
+
+      // Script page
+      if (deck.script) {
+        pdf.addPage([960, 540], 'landscape')
+        pdf.setFillColor(18, 18, 26)
+        pdf.rect(0, 0, 960, 540, 'F')
+        pdf.setTextColor(234, 88, 12)
+        pdf.setFontSize(22)
+        pdf.text('90-Second Pitch Script', 48, 60)
+        pdf.setTextColor(209, 213, 219)
+        pdf.setFontSize(13)
+        const scriptLines = pdf.splitTextToSize(deck.script, 860)
+        pdf.text(scriptLines, 48, 100)
+      }
+
+      pdf.save(`${deck.title || 'pitch-deck'}.pdf`)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -328,6 +580,27 @@ function DeckViewPage({ deck, onBack }: { deck: Deck; onBack: () => void }) {
               {tab === 'tldr' ? 'TL;DR' : tab === 'script' ? 'Pitch Script' : 'Slides'}
             </button>
           ))}
+          <button onClick={exportPDF} disabled={exporting}
+            className="text-xs px-3 py-1.5 rounded-lg bg-green-600/20 border border-green-500/30 text-green-400 hover:bg-green-600/30 transition flex items-center gap-1 disabled:opacity-50">
+            {exporting ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+            {exporting ? 'Exporting...' : 'Export PDF'}
+          </button>
+          <button onClick={copyShareLink}
+            className="text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition flex items-center gap-1">
+            <Share2 size={12} /> {showShareToast ? 'Copied!' : 'Share Link'}
+          </button>
+          {!isFinal && (
+            <button onClick={handleFinalize} disabled={finalizing}
+              className="text-xs px-3 py-1.5 rounded-lg bg-orange-600 text-white hover:bg-orange-500 transition flex items-center gap-1 disabled:opacity-50">
+              {finalizing ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
+              {finalizing ? 'Finalizing...' : 'Finalize'}
+            </button>
+          )}
+          {isFinal && (
+            <span className="text-xs px-3 py-1.5 rounded-lg bg-green-600/20 border border-green-500/30 text-green-400 flex items-center gap-1">
+              <Check size={12} /> Finalized
+            </span>
+          )}
         </div>
       </div>
 
@@ -337,20 +610,84 @@ function DeckViewPage({ deck, onBack }: { deck: Deck; onBack: () => void }) {
         <div className="space-y-4">
           {/* Slide display */}
           <div className="bg-[#12121a] border border-gray-800 rounded-xl p-8 min-h-[400px] flex flex-col justify-center">
-            <div className="text-xs text-orange-400 mb-2">Slide {currentSlide + 1} of {deck.slides.length}</div>
-            <h2 className="text-3xl font-bold text-white mb-6">{slide.title}</h2>
-            <ul className="space-y-3">
-              {slide.bullets?.map((b, i) => (
-                <li key={i} className="text-lg text-gray-300 flex items-start gap-3">
-                  <span className="w-2 h-2 bg-orange-500 rounded-full mt-2.5 shrink-0" />
-                  {b}
-                </li>
-              ))}
-            </ul>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs text-orange-400">Slide {currentSlide + 1} of {deck.slides.length}</div>
+              <div className="flex gap-1">
+                {!editing && (
+                  <>
+                    <button onClick={startEditing} className="text-xs px-2 py-1 text-gray-500 hover:text-white transition flex items-center gap-1">
+                      <Pencil size={12} /> Edit
+                    </button>
+                    <button onClick={() => setShowRegenInput(!showRegenInput)} className="text-xs px-2 py-1 text-gray-500 hover:text-orange-400 transition flex items-center gap-1">
+                      <RefreshCw size={12} /> Regenerate
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {editing ? (
+              <div className="space-y-4">
+                <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)}
+                  className="w-full text-3xl font-bold bg-[#0a0a0f] border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500" />
+                <div className="space-y-2">
+                  {editBullets.map((b, i) => (
+                    <div key={i} className="flex gap-2 items-start">
+                      <span className="w-2 h-2 bg-orange-500 rounded-full mt-3 shrink-0" />
+                      <input type="text" value={b} onChange={e => { const nb = [...editBullets]; nb[i] = e.target.value; setEditBullets(nb) }}
+                        className="flex-1 bg-[#0a0a0f] border border-gray-700 rounded-lg px-3 py-1.5 text-gray-300 text-lg focus:outline-none focus:border-orange-500" />
+                      <button onClick={() => setEditBullets(editBullets.filter((_, j) => j !== i))} className="text-gray-600 hover:text-red-400 mt-1"><X size={14} /></button>
+                    </div>
+                  ))}
+                  <button onClick={() => setEditBullets([...editBullets, ''])} className="text-xs text-gray-500 hover:text-orange-400 flex items-center gap-1"><Plus size={12} /> Add bullet</button>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">Speaker Notes</div>
+                  <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3}
+                    className="w-full bg-[#0a0a0f] border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-400 focus:outline-none focus:border-orange-500 resize-y" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={saveEdit} disabled={saving}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm transition flex items-center gap-1 disabled:opacity-50">
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
+                  </button>
+                  <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-sm transition flex items-center gap-1">
+                    <X size={14} /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-3xl font-bold text-white mb-6">{slide.title}</h2>
+                <ul className="space-y-3">
+                  {slide.bullets?.map((b, i) => (
+                    <li key={i} className="text-lg text-gray-300 flex items-start gap-3">
+                      <span className="w-2 h-2 bg-orange-500 rounded-full mt-2.5 shrink-0" />
+                      {b}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
 
+          {/* Regenerate input */}
+          {showRegenInput && !editing && (
+            <div className="bg-[#0a0a0f] border border-orange-500/30 rounded-lg p-4 flex gap-2">
+              <input type="text" value={regenInstruction} onChange={e => setRegenInstruction(e.target.value)}
+                placeholder="Optional: specific instructions (e.g. 'make it more data-driven')"
+                className="flex-1 px-3 py-2 bg-[#12121a] border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-orange-500"
+                onKeyDown={e => e.key === 'Enter' && handleRegenerate()} />
+              <button onClick={handleRegenerate} disabled={regenerating}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm transition flex items-center gap-1 disabled:opacity-50">
+                {regenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                {regenerating ? 'Regenerating...' : 'Go'}
+              </button>
+            </div>
+          )}
+
           {/* Speaker notes */}
-          {slide.notes && (
+          {!editing && slide.notes && (
             <div className="bg-[#0a0a0f] border border-gray-800 rounded-lg p-4">
               <div className="text-xs text-gray-500 mb-1">Speaker Notes</div>
               <p className="text-sm text-gray-400">{slide.notes}</p>
@@ -359,20 +696,49 @@ function DeckViewPage({ deck, onBack }: { deck: Deck; onBack: () => void }) {
 
           {/* Navigation */}
           <div className="flex items-center justify-between">
-            <button onClick={() => setCurrentSlide(Math.max(0, currentSlide - 1))} disabled={currentSlide === 0}
+            <button onClick={() => { setCurrentSlide(Math.max(0, currentSlide - 1)); setEditing(false); setShowRegenInput(false) }} disabled={currentSlide === 0}
               className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-white rounded-lg transition flex items-center gap-1">
               <ChevronLeft size={16} /> Previous
             </button>
             <div className="flex gap-1">
               {deck.slides.map((_, i) => (
-                <button key={i} onClick={() => setCurrentSlide(i)}
+                <button key={i} onClick={() => { setCurrentSlide(i); setEditing(false); setShowRegenInput(false) }}
                   className={`w-2.5 h-2.5 rounded-full transition ${i === currentSlide ? 'bg-orange-500' : 'bg-gray-700 hover:bg-gray-600'}`} />
               ))}
             </div>
-            <button onClick={() => setCurrentSlide(Math.min(deck.slides.length - 1, currentSlide + 1))} disabled={currentSlide === deck.slides.length - 1}
+            <button onClick={() => { setCurrentSlide(Math.min(deck.slides.length - 1, currentSlide + 1)); setEditing(false); setShowRegenInput(false) }} disabled={currentSlide === deck.slides.length - 1}
               className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-white rounded-lg transition flex items-center gap-1">
               Next <ChevronRight size={16} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bonus Slides Panel */}
+      {activeTab === 'slides' && (
+        <div className="bg-[#12121a] border border-gray-800 rounded-xl p-4">
+          <div className="text-xs text-gray-500 mb-3 font-medium uppercase tracking-wide">Add AI-Powered Slides</div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { type: 'market_context', label: 'Market Context', desc: 'TAM, trends, timing signals', color: 'blue' },
+              { type: 'vc_objections', label: 'Investor Q&A', desc: 'Top VC objections & rebuttals', color: 'amber' },
+              { type: 'competitive_landscape', label: 'Competitive Landscape', desc: 'Competitors & positioning', color: 'purple' },
+            ].map(bonus => (
+              <button key={bonus.type} onClick={() => handleAddBonus(bonus.type)} disabled={addingBonus !== null}
+                className={`flex-1 min-w-[180px] text-left px-4 py-3 rounded-lg border transition
+                  ${bonus.color === 'blue' ? 'bg-blue-600/10 border-blue-500/20 hover:bg-blue-600/20' : ''}
+                  ${bonus.color === 'amber' ? 'bg-amber-600/10 border-amber-500/20 hover:bg-amber-600/20' : ''}
+                  ${bonus.color === 'purple' ? 'bg-purple-600/10 border-purple-500/20 hover:bg-purple-600/20' : ''}
+                  disabled:opacity-50`}>
+                <div className="flex items-center gap-2 mb-1">
+                  {addingBonus === bonus.type ? <Loader2 size={14} className="animate-spin text-white" /> : <Plus size={14} className={
+                    bonus.color === 'blue' ? 'text-blue-400' : bonus.color === 'amber' ? 'text-amber-400' : 'text-purple-400'
+                  } />}
+                  <span className="text-sm font-medium text-white">{bonus.label}</span>
+                </div>
+                <div className="text-xs text-gray-500">{addingBonus === bonus.type ? 'Generating...' : bonus.desc}</div>
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -392,6 +758,106 @@ function DeckViewPage({ deck, onBack }: { deck: Deck; onBack: () => void }) {
           <button onClick={() => navigator.clipboard.writeText(deck.script || '')} className="mt-4 text-xs text-gray-500 hover:text-white flex items-center gap-1"><Copy size={12} /> Copy</button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Pricing ──────────────────────────────────────────────────────────────
+
+function PricingPage({ onNavigate }: { onNavigate: (v: View) => void }) {
+  const plans = [
+    {
+      name: 'Starter',
+      price: 'Free',
+      period: '',
+      desc: 'Try it out — 2 decks, basic templates',
+      features: ['2 pitch decks', '10 slides per deck', '4 templates', 'PDF export', 'TL;DR + pitch script'],
+      cta: 'Get Started',
+      color: 'gray',
+      popular: false,
+    },
+    {
+      name: 'Pro',
+      price: '$29',
+      period: '/mo',
+      desc: 'For founders actively raising',
+      features: ['Unlimited decks', 'All templates', 'Bonus slides (Market, VC Q&A, Competitive)', 'Per-slide regeneration', 'Inline editing', 'Share links', 'Priority generation'],
+      cta: 'Coming Soon',
+      color: 'orange',
+      popular: true,
+    },
+    {
+      name: 'Team',
+      price: '$79',
+      period: '/mo',
+      desc: 'For accelerators & fundraising teams',
+      features: ['Everything in Pro', 'Up to 5 team members', 'Shared deck library', 'Expert review requests', 'Custom branding', 'Analytics dashboard', 'API access'],
+      cta: 'Coming Soon',
+      color: 'purple',
+      popular: false,
+    },
+  ]
+
+  return (
+    <div className="space-y-12 py-8">
+      <div className="text-center space-y-4">
+        <h1 className="text-4xl font-bold text-white">Simple Pricing</h1>
+        <p className="text-lg text-gray-400 max-w-xl mx-auto">Start free. Upgrade when you're ready to raise.</p>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        {plans.map(plan => (
+          <div key={plan.name} className={`relative bg-[#12121a] rounded-xl p-6 flex flex-col ${
+            plan.popular ? 'border-2 border-orange-500 ring-1 ring-orange-500/20' : 'border border-gray-800'
+          }`}>
+            {plan.popular && (
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-orange-600 text-white text-xs px-3 py-1 rounded-full flex items-center gap-1">
+                <Star size={10} /> Most Popular
+              </div>
+            )}
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                {plan.color === 'gray' && <Zap size={16} className="text-gray-400" />}
+                {plan.color === 'orange' && <CreditCard size={16} className="text-orange-400" />}
+                {plan.color === 'purple' && <Users size={16} className="text-purple-400" />}
+                {plan.name}
+              </h3>
+              <div className="mt-2">
+                <span className="text-3xl font-bold text-white">{plan.price}</span>
+                {plan.period && <span className="text-gray-500 text-sm">{plan.period}</span>}
+              </div>
+              <p className="text-sm text-gray-400 mt-2">{plan.desc}</p>
+            </div>
+
+            <ul className="space-y-2 mb-6 flex-1">
+              {plan.features.map(f => (
+                <li key={f} className="text-sm text-gray-300 flex items-start gap-2">
+                  <Check size={14} className={`mt-0.5 shrink-0 ${
+                    plan.color === 'orange' ? 'text-orange-400' : plan.color === 'purple' ? 'text-purple-400' : 'text-gray-500'
+                  }`} />
+                  {f}
+                </li>
+              ))}
+            </ul>
+
+            <button
+              onClick={() => plan.name === 'Starter' ? onNavigate('projects') : undefined}
+              className={`w-full py-2.5 rounded-lg font-medium transition text-sm ${
+                plan.name === 'Starter'
+                  ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                  : plan.popular
+                    ? 'bg-orange-600 hover:bg-orange-500 text-white cursor-not-allowed opacity-75'
+                    : 'bg-purple-600/20 border border-purple-500/30 text-purple-400 cursor-not-allowed opacity-75'
+              }`}>
+              {plan.cta}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="text-center text-sm text-gray-500">
+        Payment integration coming soon. All features available during beta.
+      </div>
     </div>
   )
 }

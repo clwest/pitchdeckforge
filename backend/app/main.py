@@ -1,6 +1,8 @@
 """PitchDeckForge — FastAPI Backend"""
 
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import json
 from datetime import datetime, timezone
 from typing import Optional
@@ -10,20 +12,24 @@ from pydantic import BaseModel
 from sqlalchemy.orm import sessionmaker, joinedload
 from openai import OpenAI
 
-from app.models import User, Project, Brief, Deck, init_db, get_engine
+from app.models import User, Project, Brief, Deck, AnalyticsEvent, init_db, get_engine
 from app.auth import hash_password, verify_password, create_token, decode_token
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-AI_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
+AI_MODEL = os.getenv("AI_MODEL", "gpt-5-mini")
 
 app = FastAPI(title="PitchDeckForge", version="1.0.0")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5176,http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5176", "http://localhost:3000", "http://127.0.0.1:5176"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-DATABASE_URL = "sqlite:///./pitchdeckforge.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./pitchdeckforge.db")
+# Render PostgreSQL URLs use postgres:// but SQLAlchemy needs postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 engine = get_engine(DATABASE_URL)
 init_db(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
@@ -52,12 +58,61 @@ class RegenerateSlideRequest(BaseModel):
     slide_index: int
     instruction: str = ""
 
+class UpdateSlideRequest(BaseModel):
+    slide_index: int
+    title: Optional[str] = None
+    bullets: Optional[list[str]] = None
+    notes: Optional[str] = None
+
+class BonusSlideRequest(BaseModel):
+    slide_type: str  # "market_context", "vc_objections", "competitive_landscape"
+
 
 # ── Health ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
 def health():
     return {"status": "healthy", "service": "PitchDeckForge"}
+
+
+def _track(event_type: str, user_id: str = None, resource_id: str = None, metadata: dict = None):
+    db = SessionLocal()
+    try:
+        evt = AnalyticsEvent(event_type=event_type, user_id=user_id, resource_id=resource_id, metadata_=metadata or {})
+        db.add(evt); db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
+@app.get("/api/events")
+def list_events(event_type: Optional[str] = None, limit: int = 100, payload: dict = Depends(decode_token)):
+    db = SessionLocal()
+    try:
+        q = db.query(AnalyticsEvent).order_by(AnalyticsEvent.created_at.desc())
+        if event_type:
+            q = q.filter(AnalyticsEvent.event_type == event_type)
+        events = q.limit(limit).all()
+        return {"events": [
+            {"id": e.id, "event_type": e.event_type, "user_id": e.user_id,
+             "resource_id": e.resource_id, "metadata": e.metadata_, "created_at": e.created_at.isoformat()}
+            for e in events
+        ]}
+    finally:
+        db.close()
+
+
+@app.get("/api/events/summary")
+def events_summary(payload: dict = Depends(decode_token)):
+    db = SessionLocal()
+    try:
+        from collections import Counter
+        events = db.query(AnalyticsEvent.event_type).all()
+        counts = Counter(e[0] for e in events)
+        return {"total_events": sum(counts.values()), "by_type": dict(counts)}
+    finally:
+        db.close()
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────
@@ -191,6 +246,7 @@ def generate_deck(brief_id: str, data: GenerateDeckRequest, payload: dict = Depe
             script=script,
         )
         db.add(deck); db.commit(); db.refresh(deck)
+        _track("deck_generated", payload["sub"], deck.id, {"template": data.template, "slide_count": len(slides)})
         return _deck_dict(deck)
     finally:
         db.close()
@@ -233,12 +289,118 @@ def regenerate_slide(deck_id: str, data: RegenerateSlideRequest, payload: dict =
         slides[data.slide_index] = new_slide
         deck.slides = slides
         db.commit()
+        _track("slide_regenerated", payload["sub"], deck_id, {"slide_index": data.slide_index})
         return {"slide": new_slide, "index": data.slide_index}
     finally:
         db.close()
 
 
-# ── Stats ─────────────────────────────────────────────────────────────────
+# ── Slide Edit ────────────────────────────────────────────────────────────
+
+@app.patch("/api/decks/{deck_id}/slides")
+def update_slide(deck_id: str, data: UpdateSlideRequest, payload: dict = Depends(decode_token)):
+    db = SessionLocal()
+    try:
+        deck = (
+            db.query(Deck)
+            .options(joinedload(Deck.brief).joinedload(Brief.project))
+            .filter(Deck.id == deck_id)
+            .first()
+        )
+        if not deck or deck.brief.project.user_id != payload["sub"]:
+            raise HTTPException(status_code=404)
+        if data.slide_index < 0 or data.slide_index >= len(deck.slides):
+            raise HTTPException(status_code=400, detail="Invalid slide index")
+
+        slides = list(deck.slides)
+        slide = dict(slides[data.slide_index])
+        if data.title is not None:
+            slide["title"] = data.title
+        if data.bullets is not None:
+            slide["bullets"] = data.bullets
+        if data.notes is not None:
+            slide["notes"] = data.notes
+        slides[data.slide_index] = slide
+        deck.slides = slides
+        db.commit()
+        return {"slide": slide, "index": data.slide_index}
+    finally:
+        db.close()
+
+
+# ── Finalize & Share ──────────────────────────────────────────────────────
+
+@app.post("/api/decks/{deck_id}/finalize")
+def finalize_deck(deck_id: str, payload: dict = Depends(decode_token)):
+    db = SessionLocal()
+    try:
+        deck = (
+            db.query(Deck)
+            .options(joinedload(Deck.brief).joinedload(Brief.project))
+            .filter(Deck.id == deck_id)
+            .first()
+        )
+        if not deck or deck.brief.project.user_id != payload["sub"]:
+            raise HTTPException(status_code=404)
+
+        import secrets
+        deck.status = "final"
+        if not deck.share_token:
+            deck.share_token = secrets.token_urlsafe(16)
+        db.commit()
+        _track("deck_finalized", payload["sub"], deck_id, {"share_token": deck.share_token})
+        return {"status": "final", "share_token": deck.share_token}
+    finally:
+        db.close()
+
+
+@app.get("/api/shared/{share_token}")
+def get_shared_deck(share_token: str):
+    """Public endpoint — no auth required"""
+    db = SessionLocal()
+    try:
+        deck = db.query(Deck).filter(Deck.share_token == share_token, Deck.status == "final").first()
+        if not deck:
+            raise HTTPException(status_code=404, detail="Deck not found or not finalized")
+        _track("deck_viewed_shared", resource_id=deck.id, metadata={"share_token": share_token})
+        return {
+            "title": deck.title, "template": deck.template,
+            "slides": deck.slides or [], "tl_dr": deck.tl_dr, "script": deck.script,
+            "slide_count": len(deck.slides or []),
+        }
+    finally:
+        db.close()
+
+
+# ── Bonus Slides ─────────────────────────────────────────────────────────
+
+@app.post("/api/decks/{deck_id}/bonus-slide")
+def add_bonus_slide(deck_id: str, data: BonusSlideRequest, payload: dict = Depends(decode_token)):
+    db = SessionLocal()
+    try:
+        deck = (
+            db.query(Deck)
+            .options(joinedload(Deck.brief).joinedload(Brief.project))
+            .filter(Deck.id == deck_id)
+            .first()
+        )
+        if not deck or deck.brief.project.user_id != payload["sub"]:
+            raise HTTPException(status_code=404)
+
+        brief = deck.brief
+        new_slide = _generate_bonus_slide(brief, deck, data.slide_type)
+
+        slides = list(deck.slides)
+        # Insert before the last slide (Thank You)
+        insert_pos = max(len(slides) - 1, 0)
+        slides.insert(insert_pos, new_slide)
+        deck.slides = slides
+        db.commit()
+        _track("bonus_slide_added", payload["sub"], deck_id, {"slide_type": data.slide_type})
+        return {"slide": new_slide, "index": insert_pos, "total_slides": len(slides)}
+    finally:
+        db.close()
+
 
 @app.get("/api/stats")
 def get_stats():
@@ -262,8 +424,33 @@ SLIDE_STRUCTURE = [
     "Team", "The Ask", "Thank You / Contact",
 ]
 
+TEMPLATE_CONFIGS = {
+    "clean": {
+        "system": "You are a pitch deck consultant who creates clean, minimal decks. Use short sentences, strong whitespace, and let the data speak. Avoid jargon. Every bullet should be one crisp line.",
+        "slide_guidance": "Keep bullets to 3 per slide max. Favor clarity over detail. Use numbers where possible.",
+        "tone": "Professional, concise, modern",
+    },
+    "investor": {
+        "system": "You are a pitch deck consultant specializing in institutional investor decks. Lead with market size, defensibility, and financial metrics. Investors scan decks in under 4 minutes — front-load the numbers.",
+        "slide_guidance": "Emphasize TAM/SAM/SOM on market slide. Traction slide must lead with MRR/ARR/growth rate. Include unit economics if data exists. The Ask slide should specify use of funds breakdown.",
+        "tone": "Data-driven, authoritative, financially rigorous",
+    },
+    "growth": {
+        "system": "You are a pitch deck consultant who crafts compelling growth narratives. Build momentum slide by slide — start with the pain, escalate through traction proof points, and crescendo with the vision. Make the investor feel the trajectory.",
+        "slide_guidance": "Use storytelling arc: hook → conflict → proof → vision. Traction slide should show a growth curve narrative (month-over-month or milestone progression). End with an ambitious but credible 3-year vision.",
+        "tone": "Narrative-driven, ambitious, momentum-focused",
+    },
+    "product": {
+        "system": "You are a pitch deck consultant for product-led companies. Lead with what the product does and why users love it. Screenshots and user quotes matter more than TAM charts. Show the product experience.",
+        "slide_guidance": "Problem slide should include a real user scenario. Solution slide should describe the product experience step-by-step. Include a 'Why Now' slide about the technology or market shift enabling this product. Traction should emphasize user engagement metrics (DAU, retention, NPS).",
+        "tone": "User-centric, demo-oriented, experience-focused",
+    },
+}
+
 
 def _generate_deck_content(brief: Brief, template: str) -> tuple[list, str, str]:
+    config = TEMPLATE_CONFIGS.get(template, TEMPLATE_CONFIGS["clean"])
+
     prompt = f"""Generate a pitch deck for this company.
 
 Company: {brief.company_description}
@@ -273,7 +460,9 @@ Traction: {brief.traction or 'Not specified'}
 Team: {brief.team or 'Not specified'}
 Raise: {brief.raise_amount or 'Not specified'}
 Audience: {brief.audience} investors
-Template style: {template}
+Tone: {config['tone']}
+
+{config['slide_guidance']}
 
 Generate exactly 10 slides. For each slide return:
 - title: slide title
@@ -293,9 +482,8 @@ Return valid JSON with this structure:
     try:
         response = client.chat.completions.create(
             model=AI_MODEL,
-            messages=[{"role": "system", "content": "You are an expert pitch deck consultant. Return only valid JSON."}, {"role": "user", "content": prompt}],
-            max_tokens=4000,
-            temperature=0.7,
+            messages=[{"role": "system", "content": config["system"] + " Return only valid JSON."}, {"role": "user", "content": prompt}],
+            max_completion_tokens=4000,
         )
         content = response.choices[0].message.content
         # Try to extract JSON
@@ -326,7 +514,7 @@ Return valid JSON: {{"title": "...", "bullets": [...], "notes": "..."}}"""
         response = client.chat.completions.create(
             model=AI_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
+            max_completion_tokens=500,
         )
         content = response.choices[0].message.content
         if "```" in content:
@@ -334,6 +522,97 @@ Return valid JSON: {{"title": "...", "bullets": [...], "notes": "..."}}"""
         return json.loads(content)
     except Exception:
         return {**current, "notes": f"[Regenerated] {current.get('notes', '')}"}
+
+
+BONUS_SLIDE_PROMPTS = {
+    "market_context": {
+        "system": "You are a market research analyst who provides concise, data-backed market context for pitch decks. Focus on verifiable trends, market sizing, and timing signals.",
+        "prompt": """Based on this company, generate a "Market Context" slide for their pitch deck.
+
+Company: {company}
+Industry: {industry}
+Problem: {problem}
+Solution: {solution}
+
+Create a slide with:
+- title: A compelling market context title (e.g. "Why Now: The $X Market Opportunity")
+- bullets: 4-5 bullets covering: market size (TAM/SAM), key trends driving demand, regulatory or technology tailwinds, timing signals (why this moment matters)
+- notes: Speaker notes explaining how to present this data confidently (2-3 sentences)
+
+Return valid JSON: {{"title": "...", "bullets": [...], "notes": "..."}}""",
+    },
+    "vc_objections": {
+        "system": "You are a veteran Series A VC partner who has seen 10,000+ pitch decks. You are direct, skeptical but fair, and focused on de-risking investments. Generate realistic objections and smart rebuttals.",
+        "prompt": """Based on this pitch deck, generate an "Investor Q&A" slide with the top objections a VC would raise.
+
+Company: {company}
+Problem: {problem}
+Solution: {solution}
+Traction: {traction}
+Raise: {raise_amount}
+Stage: {stage}
+
+Create a slide with:
+- title: "Anticipated Investor Questions"
+- bullets: 5 bullets, each formatted as "Q: [objection] → A: [rebuttal]"
+- notes: Speaker notes on how to handle tough questions with confidence (2-3 sentences)
+
+Return valid JSON: {{"title": "...", "bullets": [...], "notes": "..."}}""",
+    },
+    "competitive_landscape": {
+        "system": "You are a competitive intelligence analyst. Provide clear, honest competitive positioning that acknowledges competitors while highlighting genuine differentiation.",
+        "prompt": """Based on this company, generate a "Competitive Landscape" slide.
+
+Company: {company}
+Industry: {industry}
+Problem: {problem}
+Solution: {solution}
+
+Create a slide with:
+- title: "Competitive Landscape" or a more specific variant
+- bullets: 5 bullets covering: 2-3 key competitors with their strengths and weaknesses, how this company is uniquely positioned, the key moat or defensibility angle, what would need to be true for this company to win
+- notes: Speaker notes on presenting competitive analysis without badmouthing competitors (2-3 sentences)
+
+Return valid JSON: {{"title": "...", "bullets": [...], "notes": "..."}}""",
+    },
+}
+
+
+def _generate_bonus_slide(brief: Brief, deck: Deck, slide_type: str) -> dict:
+    config = BONUS_SLIDE_PROMPTS.get(slide_type)
+    if not config:
+        return {"title": f"Bonus: {slide_type}", "bullets": ["Unknown slide type"], "notes": ""}
+
+    if not client.api_key:
+        return {"title": f"[Dev Mode] {slide_type.replace('_', ' ').title()}", "bullets": [f"Bonus slide for {brief.project.name}", "Set OPENAI_API_KEY for real generation"], "notes": "Dev mode placeholder"}
+
+    prompt = config["prompt"].format(
+        company=brief.company_description,
+        industry=brief.project.industry or "Not specified",
+        problem=brief.problem or "Not specified",
+        solution=brief.solution or "Not specified",
+        traction=brief.traction or "Not specified",
+        raise_amount=brief.raise_amount or "Not specified",
+        stage=brief.project.stage or "seed",
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=AI_MODEL,
+            messages=[
+                {"role": "system", "content": config["system"] + " Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            max_completion_tokens=800,
+        )
+        content = response.choices[0].message.content or ""
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+        return json.loads(content)
+    except Exception:
+        return {"title": f"{slide_type.replace('_', ' ').title()}", "bullets": ["Generation failed — try again"], "notes": ""}
 
 
 def _dev_mode_deck(brief: Brief) -> list:
@@ -360,4 +639,4 @@ def _brief_dict(b: Brief) -> dict:
     return {"id": b.id, "project_id": b.project_id, "company_description": b.company_description[:100], "audience": b.audience, "raise_amount": b.raise_amount, "created_at": b.created_at.isoformat() if b.created_at else None}
 
 def _deck_dict(d: Deck) -> dict:
-    return {"id": d.id, "brief_id": d.brief_id, "title": d.title, "template": d.template, "slides": d.slides or [], "tl_dr": d.tl_dr, "script": d.script, "status": d.status, "slide_count": len(d.slides or []), "created_at": d.created_at.isoformat() if d.created_at else None}
+    return {"id": d.id, "brief_id": d.brief_id, "title": d.title, "template": d.template, "slides": d.slides or [], "tl_dr": d.tl_dr, "script": d.script, "status": d.status, "share_token": d.share_token, "slide_count": len(d.slides or []), "created_at": d.created_at.isoformat() if d.created_at else None}

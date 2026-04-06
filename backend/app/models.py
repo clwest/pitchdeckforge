@@ -68,8 +68,19 @@ class Deck(Base):
     tl_dr = Column(Text, nullable=True)
     script = Column(Text, nullable=True)
     status = Column(String, default="draft")  # draft, final
+    share_token = Column(String, nullable=True, unique=True)
     created_at = Column(DateTime, default=utcnow)
     brief = relationship("Brief", back_populates="decks")
+
+
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    event_type = Column(String, nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    resource_id = Column(String, nullable=True)  # deck_id, project_id, etc
+    metadata_ = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime, default=utcnow)
 
 
 def get_engine(url="sqlite:///./pitchdeckforge.db"):
