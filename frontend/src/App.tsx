@@ -510,15 +510,21 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
         pdf.setFontSize(28)
         pdf.text(s.title || '', 48, 80)
 
-        // Bullets
+        // Bullets — auto-size based on content density
         pdf.setTextColor(209, 213, 219)
-        pdf.setFontSize(14)
-        let y = 120
-        for (const bullet of (s.bullets || [])) {
-          if (y > 420) break // Don't overflow past slide area
-          const lines = pdf.splitTextToSize(`  •  ${bullet}`, 860)
-          pdf.text(lines, 48, y)
-          y += lines.length * 20 + 8
+        const bullets = s.bullets || []
+        const totalChars = bullets.reduce((sum: number, b: string) => sum + b.length, 0)
+        const fontSize = totalChars > 800 ? 10 : totalChars > 500 ? 11 : bullets.length > 5 ? 12 : 14
+        const lineHeight = fontSize * 1.5
+        pdf.setFontSize(fontSize)
+        let y = 115
+        for (const bullet of bullets) {
+          if (y > 480) break
+          const truncated = bullet.length > 200 ? bullet.slice(0, 197) + '...' : bullet
+          const lines = pdf.splitTextToSize(`  •  ${truncated}`, 850)
+          const clampedLines = lines.slice(0, 4) // Max 4 wrapped lines per bullet
+          pdf.text(clampedLines, 48, y)
+          y += clampedLines.length * lineHeight + 6
         }
 
         // Speaker notes inline (bottom of slide, subtle)
