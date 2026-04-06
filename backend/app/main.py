@@ -15,8 +15,11 @@ from openai import OpenAI
 from app.models import User, Project, Brief, Deck, AnalyticsEvent, init_db, get_engine
 from app.auth import hash_password, verify_password, create_token, decode_token
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 AI_MODEL = os.getenv("AI_MODEL", "gpt-5-mini")
+
+def get_openai_client():
+    """Lazy-load OpenAI client so deploy doesn't fail without API key."""
+    return OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 app = FastAPI(title="PitchDeckForge", version="1.0.0")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5176,http://localhost:3000").split(",")
@@ -476,11 +479,11 @@ Also generate:
 Return valid JSON with this structure:
 {{"slides": [...], "tl_dr": "...", "script": "..."}}"""
 
-    if not client.api_key:
+    if not os.getenv("OPENAI_API_KEY"):
         return _dev_mode_deck(brief), _dev_mode_tldr(brief), _dev_mode_script(brief)
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client().chat.completions.create(
             model=AI_MODEL,
             messages=[{"role": "system", "content": config["system"] + " Return only valid JSON."}, {"role": "user", "content": prompt}],
             max_completion_tokens=4000,
@@ -499,7 +502,7 @@ Return valid JSON with this structure:
 
 def _regenerate_single_slide(deck: Deck, index: int, instruction: str) -> dict:
     current = deck.slides[index]
-    if not client.api_key:
+    if not os.getenv("OPENAI_API_KEY"):
         return {**current, "notes": f"[Regenerated] {current.get('notes', '')}"}
 
     prompt = f"""Regenerate this pitch deck slide. Keep the same tone as the rest of the deck.
@@ -511,7 +514,7 @@ Deck context: {deck.title}
 Return valid JSON: {{"title": "...", "bullets": [...], "notes": "..."}}"""
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client().chat.completions.create(
             model=AI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_completion_tokens=500,
@@ -583,7 +586,7 @@ def _generate_bonus_slide(brief: Brief, deck: Deck, slide_type: str) -> dict:
     if not config:
         return {"title": f"Bonus: {slide_type}", "bullets": ["Unknown slide type"], "notes": ""}
 
-    if not client.api_key:
+    if not os.getenv("OPENAI_API_KEY"):
         return {"title": f"[Dev Mode] {slide_type.replace('_', ' ').title()}", "bullets": [f"Bonus slide for {brief.project.name}", "Set OPENAI_API_KEY for real generation"], "notes": "Dev mode placeholder"}
 
     prompt = config["prompt"].format(
@@ -597,7 +600,7 @@ def _generate_bonus_slide(brief: Brief, deck: Deck, slide_type: str) -> dict:
     )
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client().chat.completions.create(
             model=AI_MODEL,
             messages=[
                 {"role": "system", "content": config["system"] + " Return only valid JSON."},
