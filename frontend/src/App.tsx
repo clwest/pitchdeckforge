@@ -800,9 +800,10 @@ function PricingPage({ onNavigate }: { onNavigate: (v: View) => void }) {
       period: '/mo',
       desc: 'For founders actively raising',
       features: ['Unlimited decks', 'All templates', 'Bonus slides (Market, VC Q&A, Competitive)', 'Per-slide regeneration', 'Inline editing', 'Share links', 'Priority generation'],
-      cta: 'Coming Soon',
+      cta: 'Subscribe — $29/mo',
       color: 'orange',
       popular: true,
+      plan: 'pro_monthly',
     },
     {
       name: 'Team',
@@ -810,9 +811,10 @@ function PricingPage({ onNavigate }: { onNavigate: (v: View) => void }) {
       period: '/mo',
       desc: 'For accelerators & fundraising teams',
       features: ['Everything in Pro', 'Up to 5 team members', 'Shared deck library', 'Expert review requests', 'Custom branding', 'Analytics dashboard', 'API access'],
-      cta: 'Coming Soon',
+      cta: 'Subscribe — $79/mo',
       color: 'purple',
       popular: false,
+      plan: 'team_monthly',
     },
   ]
 
@@ -859,13 +861,27 @@ function PricingPage({ onNavigate }: { onNavigate: (v: View) => void }) {
             </ul>
 
             <button
-              onClick={() => plan.name === 'Starter' ? onNavigate('projects') : undefined}
+              onClick={async () => {
+                if (plan.name === 'Starter') { onNavigate('projects'); return }
+                const token = localStorage.getItem('pdf_token')
+                if (!token) { onNavigate('login'); return }
+                try {
+                  const r = await fetch(`${API.replace('/api', '')}/api/stripe/checkout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ plan: (plan as any).plan }),
+                  })
+                  const data = await r.json()
+                  if (data.url) window.location.href = data.url
+                  else alert(data.detail || 'Failed to start checkout')
+                } catch { alert('Checkout unavailable — please try again') }
+              }}
               className={`w-full py-2.5 rounded-lg font-medium transition text-sm ${
                 plan.name === 'Starter'
                   ? 'bg-gray-800 hover:bg-gray-700 text-white'
                   : plan.popular
-                    ? 'bg-orange-600 hover:bg-orange-500 text-white cursor-not-allowed opacity-75'
-                    : 'bg-purple-600/20 border border-purple-500/30 text-purple-400 cursor-not-allowed opacity-75'
+                    ? 'bg-orange-600 hover:bg-orange-500 text-white'
+                    : 'bg-purple-600 hover:bg-purple-500 text-white'
               }`}>
               {plan.cta}
             </button>

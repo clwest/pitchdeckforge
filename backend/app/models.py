@@ -25,6 +25,9 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
     password_hash = Column(String, nullable=True)
+    subscription_plan = Column(String, default="free")  # free, pro_monthly, team_monthly
+    stripe_subscription_id = Column(String, nullable=True)
+    stripe_customer_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     projects = relationship("Project", back_populates="user", order_by="Project.created_at.desc()")
 
@@ -90,4 +93,16 @@ def get_engine(url="sqlite:///./pitchdeckforge.db"):
 def init_db(url="sqlite:///./pitchdeckforge.db"):
     engine = get_engine(url)
     Base.metadata.create_all(engine)
+    # Add missing columns for shared DB compatibility
+    from sqlalchemy import inspect as sa_inspect, text
+    inspector = sa_inspect(engine)
+    if inspector.has_table("users"):
+        existing = {c["name"] for c in inspector.get_columns("users")}
+        with engine.begin() as conn:
+            if "subscription_plan" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN subscription_plan VARCHAR DEFAULT 'free'"))
+            if "stripe_subscription_id" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN stripe_subscription_id VARCHAR"))
+            if "stripe_customer_id" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR"))
     return engine

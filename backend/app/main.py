@@ -22,6 +22,10 @@ def get_openai_client():
     return OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 app = FastAPI(title="PitchDeckForge", version="1.0.0")
+
+# Stripe billing routes
+from app.stripe_billing import router as stripe_router
+app.include_router(stripe_router)
 _origins_env = os.getenv("ALLOWED_ORIGINS", "")
 ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] if _origins_env else ["*"]
 app.add_middleware(
