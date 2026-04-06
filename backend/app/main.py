@@ -406,6 +406,30 @@ def add_bonus_slide(deck_id: str, data: BonusSlideRequest, payload: dict = Depen
         db.close()
 
 
+@app.delete("/api/decks/{deck_id}/slides/{slide_index}")
+def delete_slide(deck_id: str, slide_index: int, payload: dict = Depends(decode_token)):
+    """Delete a slide by index from a deck."""
+    db = SessionLocal()
+    try:
+        deck = (
+            db.query(Deck)
+            .options(joinedload(Deck.brief).joinedload(Brief.project))
+            .filter(Deck.id == deck_id)
+            .first()
+        )
+        if not deck or deck.brief.project.user_id != payload["sub"]:
+            raise HTTPException(status_code=404)
+        slides = list(deck.slides)
+        if slide_index < 0 or slide_index >= len(slides):
+            raise HTTPException(status_code=400, detail="Invalid slide index")
+        removed = slides.pop(slide_index)
+        deck.slides = slides
+        db.commit()
+        return {"removed": removed, "total_slides": len(slides)}
+    finally:
+        db.close()
+
+
 @app.get("/api/stats")
 def get_stats():
     db = SessionLocal()

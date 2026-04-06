@@ -621,6 +621,19 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
                     <button onClick={() => setShowRegenInput(!showRegenInput)} className="text-xs px-2 py-1 text-gray-500 hover:text-orange-400 transition flex items-center gap-1">
                       <RefreshCw size={12} /> Regenerate
                     </button>
+                    <button onClick={async () => {
+                      if (!confirm('Delete this slide?')) return
+                      const r = await fetch(`${API}/decks/${deck.id}/slides/${currentSlide}`, {
+                        method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                      })
+                      if (r.ok) {
+                        const data = await r.json()
+                        deck.slides = deck.slides.filter((_: Slide, i: number) => i !== currentSlide)
+                        setCurrentSlide(Math.min(currentSlide, deck.slides.length - 1))
+                      }
+                    }} className="text-xs px-2 py-1 text-gray-500 hover:text-red-400 transition flex items-center gap-1">
+                      <X size={12} /> Delete
+                    </button>
                   </>
                 )}
               </div>
