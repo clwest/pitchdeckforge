@@ -613,7 +613,17 @@ def _generate_bonus_slide(brief: Brief, deck: Deck, slide_type: str) -> dict:
             content = content.split("```json")[1].split("```")[0]
         elif "```" in content:
             content = content.split("```")[1].split("```")[0]
-        return json.loads(content.strip())
+        try:
+            return json.loads(content.strip())
+        except json.JSONDecodeError:
+            # Fallback: extract what we can from the raw text
+            lines = [l.strip() for l in content.strip().split("\n") if l.strip() and not l.strip().startswith("{") and not l.strip().startswith("}")]
+            bullets = [l.lstrip("- ").lstrip("* ") for l in lines if len(l) > 10][:6]
+            return {
+                "title": f"{slide_type.replace('_', ' ').title()}",
+                "bullets": bullets if bullets else ["AI-generated content — see speaker notes for details"],
+                "notes": content[:500],
+            }
     except Exception as e:
         print(f"[BONUS SLIDE ERROR] {slide_type}: {e}")
         return {"title": f"{slide_type.replace('_', ' ').title()}", "bullets": [f"Generation failed — try again ({type(e).__name__})"], "notes": ""}
