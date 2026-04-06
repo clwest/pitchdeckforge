@@ -6,7 +6,7 @@ No custom payment forms — Stripe handles all PCI compliance.
 
 import os
 import stripe
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -25,14 +25,6 @@ PRICE_IDS = {
 
 class CheckoutRequest(BaseModel):
     plan: str  # "pro_monthly" or "team_monthly"
-
-
-@router.post("/create-checkout")
-def create_checkout(req: CheckoutRequest, payload: dict = Depends(None)):
-    """Create a Stripe Checkout session for subscription."""
-    from app.auth import decode_token
-    # Re-wire dependency since router can't use Depends at definition time
-    pass
 
 
 @router.post("/checkout")
