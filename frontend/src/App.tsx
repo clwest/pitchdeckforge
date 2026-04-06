@@ -624,7 +624,7 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
                     <button onClick={async () => {
                       if (!confirm('Delete this slide?')) return
                       const r = await fetch(`${API}/decks/${deck.id}/slides/${currentSlide}`, {
-                        method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                        method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('pdf_token')}` }
                       })
                       if (r.ok) {
                         await r.json()
