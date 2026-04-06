@@ -606,16 +606,17 @@ def _generate_bonus_slide(brief: Brief, deck: Deck, slide_type: str) -> dict:
                 {"role": "system", "content": config["system"] + " Return only valid JSON."},
                 {"role": "user", "content": prompt},
             ],
-            max_completion_tokens=800,
+            max_completion_tokens=2000,
         )
         content = response.choices[0].message.content or ""
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0]
         elif "```" in content:
             content = content.split("```")[1].split("```")[0]
-        return json.loads(content)
-    except Exception:
-        return {"title": f"{slide_type.replace('_', ' ').title()}", "bullets": ["Generation failed — try again"], "notes": ""}
+        return json.loads(content.strip())
+    except Exception as e:
+        print(f"[BONUS SLIDE ERROR] {slide_type}: {e}")
+        return {"title": f"{slide_type.replace('_', ' ').title()}", "bullets": [f"Generation failed — try again ({type(e).__name__})"], "notes": ""}
 
 
 def _dev_mode_deck(brief: Brief) -> list:
