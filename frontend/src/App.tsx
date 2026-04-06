@@ -627,7 +627,7 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
                         method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                       })
                       if (r.ok) {
-                        const data = await r.json()
+                        await r.json()
                         deck.slides = deck.slides.filter((_: Slide, i: number) => i !== currentSlide)
                         setCurrentSlide(Math.min(currentSlide, deck.slides.length - 1))
                       }
