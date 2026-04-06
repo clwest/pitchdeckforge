@@ -1,5 +1,6 @@
 """PitchDeckForge — Auth utilities"""
 
+import os
 import hashlib
 import hmac
 from datetime import datetime, timedelta, timezone
@@ -7,7 +8,7 @@ from jose import jwt, JWTError
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-SECRET_KEY = "pitchdeckforge-dev-secret-change-in-prod"
+SECRET_KEY = os.getenv("SECRET_KEY", "founder-toolkit-shared-secret-2026")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 security = HTTPBearer()
