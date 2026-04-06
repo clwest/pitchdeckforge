@@ -515,23 +515,22 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
         pdf.setFontSize(14)
         let y = 120
         for (const bullet of (s.bullets || [])) {
+          if (y > 420) break // Don't overflow past slide area
           const lines = pdf.splitTextToSize(`  •  ${bullet}`, 860)
           pdf.text(lines, 48, y)
           y += lines.length * 20 + 8
         }
 
-        // Speaker notes page
-        if (s.notes) {
-          pdf.addPage([960, 540], 'landscape')
-          pdf.setFillColor(10, 10, 15)
-          pdf.rect(0, 0, 960, 540, 'F')
-          pdf.setTextColor(156, 163, 175)
-          pdf.setFontSize(10)
-          pdf.text(`Speaker Notes — Slide ${i + 1}: ${s.title}`, 48, 40)
-          pdf.setTextColor(209, 213, 219)
-          pdf.setFontSize(13)
+        // Speaker notes inline (bottom of slide, subtle)
+        if (s.notes && y < 460) {
+          pdf.setDrawColor(60, 60, 80)
+          pdf.line(48, y + 10, 912, y + 10)
+          pdf.setTextColor(120, 120, 140)
+          pdf.setFontSize(9)
+          pdf.text('Speaker Notes:', 48, y + 25)
+          pdf.setFontSize(9)
           const noteLines = pdf.splitTextToSize(s.notes, 860)
-          pdf.text(noteLines, 48, 70)
+          pdf.text(noteLines.slice(0, 3), 48, y + 38) // Max 3 lines of notes
         }
       }
 
