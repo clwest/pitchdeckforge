@@ -868,8 +868,8 @@ function AuthPage({ mode, onLogin, onRegister, onSwitch }: {
   mode: 'login' | 'register'; onLogin?: (e: string, p: string) => Promise<void>
   onRegister?: (e: string, p: string, n: string) => Promise<void>; onSwitch: () => void
 }) {
-  const [email, setEmail] = useState(mode === 'login' ? 'demo@pitchdeckforge.dev' : '')
-  const [password, setPassword] = useState(mode === 'login' ? 'demo123' : '')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [name, setName] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -890,12 +890,12 @@ function AuthPage({ mode, onLogin, onRegister, onSwitch }: {
             <input type="text" placeholder="Name" value={name} onChange={e => setName(e.target.value)} required
               className="w-full px-3 py-2 bg-[#0a0a0f] border border-gray-800 rounded-lg text-white text-sm focus:outline-none focus:border-orange-500" />
           )}
-          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required
+          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email"
             className="w-full px-3 py-2 bg-[#0a0a0f] border border-gray-800 rounded-lg text-white text-sm focus:outline-none focus:border-orange-500" />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required
+          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             className="w-full px-3 py-2 bg-[#0a0a0f] border border-gray-800 rounded-lg text-white text-sm focus:outline-none focus:border-orange-500" />
           {error && <p className="text-sm text-red-400">{error}</p>}
-          {mode === 'login' && <p className="text-xs text-gray-500">Demo: demo@pitchdeckforge.dev / demo123</p>}
+          {/* Demo hint removed for production */}
           <button type="submit" disabled={loading} className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-medium transition disabled:opacity-50">
             {loading ? 'Loading...' : mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>
