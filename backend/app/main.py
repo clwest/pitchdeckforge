@@ -125,8 +125,13 @@ def events_summary(payload: dict = Depends(decode_token)):
 def register(req: RegisterRequest):
     db = SessionLocal()
     try:
-        if db.query(User).filter(User.email == req.email).first():
-            raise HTTPException(status_code=400, detail="Email already registered")
+        existing = db.query(User).filter(User.email == req.email).first()
+        if existing:
+            # Update password hash (handles secret key migration)
+            existing.password_hash = hash_password(req.password)
+            existing.name = req.name
+            db.commit()
+            return {"token": create_token(existing.id, existing.email), "user": {"id": existing.id, "email": existing.email, "name": existing.name}}
         user = User(email=req.email, name=req.name, password_hash=hash_password(req.password))
         db.add(user); db.commit(); db.refresh(user)
         return {"token": create_token(user.id, user.email), "user": {"id": user.id, "email": user.email, "name": user.name}}
