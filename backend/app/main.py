@@ -22,7 +22,8 @@ def get_openai_client():
     return OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 app = FastAPI(title="PitchDeckForge", version="1.0.0")
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5176,http://localhost:3000").split(",")
+_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] if _origins_env else ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
