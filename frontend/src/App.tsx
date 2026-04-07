@@ -188,18 +188,35 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
-      {/* Founder Toolkit cross-app nav */}
-      <div className="bg-[#0f0f18] border-b border-gray-800/50 px-4 py-1.5">
+      {/* Founder Toolkit cross-app nav with progress stepper */}
+      <div className="bg-[#0f0f18] border-b border-gray-800/50 px-4 py-2">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <a href="https://founder-toolkit.vercel.app" className="flex items-center gap-1.5 hover:opacity-80 transition">
             <div className="w-5 h-5 rounded bg-gradient-to-br from-[#e94560] to-[#7c3aed] flex items-center justify-center text-[9px] font-bold text-white">FT</div>
             <span className="text-[11px] font-medium text-gray-400">Founder Toolkit</span>
           </a>
-          <div className="flex items-center gap-3 text-[11px]">
-            <span className="text-orange-400 font-medium">Deck</span>
-            <a href="https://dealflowtracker.vercel.app" className="text-gray-500 hover:text-violet-400 transition">Pipeline</a>
-            <a href="https://mentorforge.vercel.app" className="text-gray-500 hover:text-indigo-400 transition">Mentor</a>
-            <a href="https://contract-concierge-pi.vercel.app" className="text-gray-500 hover:text-emerald-400 transition">Contracts</a>
+          <div className="flex items-center gap-1">
+            {[
+              { step: 1, label: 'Mentor', href: 'https://mentorforge.vercel.app', active: false, color: 'indigo' },
+              { step: 2, label: 'Deck', href: '', active: true, color: 'orange' },
+              { step: 3, label: 'Pipeline', href: 'https://dealflowtracker.vercel.app', active: false, color: 'violet' },
+              { step: 4, label: 'Contracts', href: 'https://contract-concierge-pi.vercel.app', active: false, color: 'emerald' },
+            ].map((s, i) => (
+              <div key={s.step} className="flex items-center">
+                {i > 0 && <div className="w-4 h-[1px] bg-gray-700 mx-0.5" />}
+                {s.active ? (
+                  <span className={`flex items-center gap-1 text-[11px] font-semibold text-${s.color}-400 bg-${s.color}-500/10 px-2 py-0.5 rounded-full`}>
+                    <span className={`w-4 h-4 rounded-full bg-${s.color}-500 flex items-center justify-center text-[9px] font-bold text-white`}>{s.step}</span>
+                    {s.label}
+                  </span>
+                ) : (
+                  <a href={s.href} className={`flex items-center gap-1 text-[11px] text-gray-500 hover:text-${s.color}-400 transition px-1.5 py-0.5`}>
+                    <span className="w-4 h-4 rounded-full bg-gray-800 flex items-center justify-center text-[9px] text-gray-500">{s.step}</span>
+                    {s.label}
+                  </a>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>
