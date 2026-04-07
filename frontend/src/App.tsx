@@ -527,19 +527,16 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
         pdf.setFontSize(28)
         pdf.text(s.title || '', 48, 80)
 
-        // Bullets — auto-size based on content density
+        // Bullets — readable size, use continuation pages for overflow
         pdf.setTextColor(209, 213, 219)
         const bullets = s.bullets || []
-        const totalChars = bullets.reduce((sum: number, b: string) => sum + b.length, 0)
-        // Aggressive sizing for dense slides — prevent overflow
-        const fontSize = totalChars > 1500 ? 8 : totalChars > 1000 ? 9 : totalChars > 600 ? 10 : totalChars > 400 ? 11 : bullets.length > 5 ? 11 : 13
+        const fontSize = bullets.length > 6 ? 11 : 12
         const lineHeight = fontSize * 1.5
-        // Narrower wrap width to prevent right-edge overflow (jsPDF font metrics are wider than expected)
-        const wrapWidth = fontSize <= 9 ? 780 : fontSize <= 10 ? 800 : 830
+        const wrapWidth = 800
         pdf.setFontSize(fontSize)
         let y = 110
         for (const bullet of bullets) {
-          if (y > 490) {
+          if (y > 470) {
             // Overflow: add continuation page
             pdf.addPage([960, 540], 'landscape')
             pdf.setFillColor(18, 18, 26)
@@ -553,9 +550,26 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
           }
           // Clean special chars that cause wide-spacing in jsPDF
           const clean = bullet.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ')
-          const lines = pdf.splitTextToSize(`  •  ${clean}`, wrapWidth)
-          pdf.text(lines, 48, y)
-          y += lines.length * lineHeight + 4
+
+          // Q&A formatting: split "Q: ... -> A: ..." or "Q: ... A: ..." into separate lines
+          const qaMatch = clean.match(/^(Q:\s*.+?)[\s]*(?:->|-->|—)\s*(A[:.]\s*.+)$/i)
+            || clean.match(/^(Q:\s*.+?)\s+(A[:.]\s*.+)$/i)
+          if (qaMatch) {
+            // Render question in white, answer in gray
+            const qLines = pdf.splitTextToSize(qaMatch[1].trim(), wrapWidth - 20)
+            pdf.setTextColor(255, 255, 255)
+            pdf.text(qLines, 58, y)
+            y += qLines.length * lineHeight + 2
+            const aLines = pdf.splitTextToSize(qaMatch[2].trim(), wrapWidth - 20)
+            pdf.setTextColor(180, 180, 195)
+            pdf.text(aLines, 58, y)
+            y += aLines.length * lineHeight + 10
+            pdf.setTextColor(209, 213, 219)
+          } else {
+            const lines = pdf.splitTextToSize(`  •  ${clean}`, wrapWidth)
+            pdf.text(lines, 48, y)
+            y += lines.length * lineHeight + 6
+          }
         }
 
         // Speaker notes inline (bottom of slide, subtle)
