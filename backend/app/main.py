@@ -638,13 +638,14 @@ def _generate_bonus_slide(brief: Brief, deck: Deck, slide_type: str) -> dict:
     )
 
     try:
+        # Use gpt-5.2 for bonus slides — gpt-5-mini wraps JSON in reasoning tokens
         response = get_openai_client().chat.completions.create(
-            model=AI_MODEL,
+            model="gpt-5.2",
             messages=[
-                {"role": "system", "content": config["system"] + " Return only valid JSON."},
+                {"role": "system", "content": config["system"] + " Return ONLY valid JSON, no markdown fences, no explanation."},
                 {"role": "user", "content": prompt},
             ],
-            max_completion_tokens=2000,
+            max_tokens=1500,
         )
         content = response.choices[0].message.content or ""
         if "```json" in content:
