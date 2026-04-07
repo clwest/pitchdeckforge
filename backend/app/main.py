@@ -645,7 +645,7 @@ def _generate_bonus_slide(brief: Brief, deck: Deck, slide_type: str) -> dict:
                 {"role": "system", "content": config["system"] + " Return ONLY valid JSON, no markdown fences, no explanation."},
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=1500,
+            max_completion_tokens=1500,
         )
         content = response.choices[0].message.content or ""
         if "```json" in content:
