@@ -531,29 +531,39 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
         pdf.setTextColor(209, 213, 219)
         const bullets = s.bullets || []
         const totalChars = bullets.reduce((sum: number, b: string) => sum + b.length, 0)
-        const fontSize = totalChars > 800 ? 10 : totalChars > 500 ? 11 : bullets.length > 5 ? 12 : 14
-        const lineHeight = fontSize * 1.5
+        const fontSize = totalChars > 1200 ? 9 : totalChars > 800 ? 10 : totalChars > 500 ? 11 : bullets.length > 5 ? 12 : 14
+        const lineHeight = fontSize * 1.4
+        const maxLinesPerBullet = bullets.length <= 3 ? 8 : bullets.length <= 5 ? 6 : 4
         pdf.setFontSize(fontSize)
         let y = 115
         for (const bullet of bullets) {
-          if (y > 480) break
-          const truncated = bullet.length > 200 ? bullet.slice(0, 197) + '...' : bullet
-          const lines = pdf.splitTextToSize(`  •  ${truncated}`, 850)
-          const clampedLines = lines.slice(0, 4) // Max 4 wrapped lines per bullet
+          if (y > 500) {
+            // Overflow: add continuation page
+            pdf.addPage([960, 540], 'landscape')
+            pdf.setFillColor(18, 18, 26)
+            pdf.rect(0, 0, 960, 540, 'F')
+            pdf.setTextColor(234, 88, 12)
+            pdf.setFontSize(10)
+            pdf.text(`${s.title} (continued)`, 48, 40)
+            pdf.setTextColor(209, 213, 219)
+            pdf.setFontSize(fontSize)
+            y = 70
+          }
+          const lines = pdf.splitTextToSize(`  •  ${bullet}`, 850)
+          const clampedLines = lines.slice(0, maxLinesPerBullet)
           pdf.text(clampedLines, 48, y)
-          y += clampedLines.length * lineHeight + 6
+          y += clampedLines.length * lineHeight + 5
         }
 
         // Speaker notes inline (bottom of slide, subtle)
-        if (s.notes && y < 460) {
+        if (s.notes && y < 480) {
           pdf.setDrawColor(60, 60, 80)
-          pdf.line(48, y + 10, 912, y + 10)
+          pdf.line(48, y + 8, 912, y + 8)
           pdf.setTextColor(120, 120, 140)
           pdf.setFontSize(9)
-          pdf.text('Speaker Notes:', 48, y + 25)
-          pdf.setFontSize(9)
+          pdf.text('Speaker Notes:', 48, y + 20)
           const noteLines = pdf.splitTextToSize(s.notes, 860)
-          pdf.text(noteLines.slice(0, 3), 48, y + 38) // Max 3 lines of notes
+          pdf.text(noteLines.slice(0, 3), 48, y + 32)
         }
       }
 
