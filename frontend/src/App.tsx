@@ -168,6 +168,21 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f]">
+      {/* Founder Toolkit cross-app nav */}
+      <div className="bg-[#0f0f18] border-b border-gray-800/50 px-4 py-1.5">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <a href="https://founder-toolkit.vercel.app" className="flex items-center gap-1.5 hover:opacity-80 transition">
+            <div className="w-5 h-5 rounded bg-gradient-to-br from-[#e94560] to-[#7c3aed] flex items-center justify-center text-[9px] font-bold text-white">FT</div>
+            <span className="text-[11px] font-medium text-gray-400">Founder Toolkit</span>
+          </a>
+          <div className="flex items-center gap-3 text-[11px]">
+            <span className="text-orange-400 font-medium">Deck</span>
+            <a href="https://dealflowtracker.vercel.app" className="text-gray-500 hover:text-violet-400 transition">Pipeline</a>
+            <a href="https://mentorforge.vercel.app" className="text-gray-500 hover:text-indigo-400 transition">Mentor</a>
+            <a href="https://contract-concierge-pi.vercel.app" className="text-gray-500 hover:text-emerald-400 transition">Contracts</a>
+          </div>
+        </div>
+      </div>
       <nav className="border-b border-gray-800 bg-[#0a0a0f]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <button onClick={() => navigate('home')} className="flex items-center gap-2 text-lg font-semibold text-white hover:text-orange-400 transition">
