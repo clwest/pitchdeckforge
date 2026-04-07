@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import sessionmaker, joinedload
 from openai import OpenAI
 
-from app.models import User, Project, Brief, Deck, AnalyticsEvent, init_db, get_engine
+from app.models import User, Project, Brief, Deck, AnalyticsEvent, FounderProject, init_db, get_engine
 from app.auth import hash_password, verify_password, create_token, decode_token
 
 AI_MODEL = os.getenv("AI_MODEL", "gpt-5-mini")
@@ -439,6 +439,131 @@ def delete_slide(deck_id: str, slide_index: int, payload: dict = Depends(decode_
         return {"removed": removed, "total_slides": len(slides)}
     finally:
         db.close()
+
+
+# ── Founder Project (cross-app data flow) ────────────────────────────────
+
+@app.get("/api/founder-projects")
+def list_founder_projects(payload: dict = Depends(decode_token)):
+    """List Founder Projects available for import (with mentor notes)."""
+    db = SessionLocal()
+    try:
+        projects = (
+            db.query(FounderProject)
+            .filter(FounderProject.user_id == payload["sub"])
+            .order_by(FounderProject.updated_at.desc())
+            .all()
+        )
+        return {"projects": [_founder_project_dict(p) for p in projects]}
+    finally:
+        db.close()
+
+
+@app.get("/api/founder-projects/{project_id}")
+def get_founder_project(project_id: str, payload: dict = Depends(decode_token)):
+    db = SessionLocal()
+    try:
+        p = db.query(FounderProject).filter(
+            FounderProject.id == project_id, FounderProject.user_id == payload["sub"]
+        ).first()
+        if not p:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return _founder_project_dict(p)
+    finally:
+        db.close()
+
+
+class ImportFromProjectRequest(BaseModel):
+    project_id: str
+    template: str = "clean"
+
+
+@app.post("/api/founder-projects/import")
+def import_from_founder_project(data: ImportFromProjectRequest, payload: dict = Depends(decode_token)):
+    """Import mentor notes from a Founder Project to create a brief + generate a deck."""
+    db = SessionLocal()
+    try:
+        fp = db.query(FounderProject).filter(
+            FounderProject.id == data.project_id, FounderProject.user_id == payload["sub"]
+        ).first()
+        if not fp:
+            raise HTTPException(status_code=404, detail="Founder Project not found")
+
+        notes = fp.mentor_notes or {}
+
+        # Create a project from the founder project
+        project = Project(
+            user_id=payload["sub"],
+            name=fp.title,
+            industry="",
+            stage="seed",
+        )
+        db.add(project)
+        db.flush()
+
+        # Create a brief seeded from mentor notes
+        brief = Brief(
+            project_id=project.id,
+            company_description=notes.get("topic", fp.title),
+            problem=notes.get("key_feedback", ""),
+            solution="",
+            traction="",
+            team="",
+            raise_amount="",
+            audience="seed",
+            target_market="",
+            business_model="",
+        )
+        db.add(brief)
+        db.flush()
+
+        # Generate deck from the seeded brief
+        slides, tl_dr, script = _generate_deck_content(brief, data.template)
+        deck = Deck(
+            brief_id=brief.id,
+            title=f"{fp.title} — Pitch Deck",
+            template=data.template,
+            slides=slides,
+            tl_dr=tl_dr,
+            script=script,
+        )
+        db.add(deck)
+        db.flush()
+
+        # Write deck reference back to the founder project
+        fp.deck_id = deck.id
+        fp.deck_summary = {
+            "title": deck.title,
+            "tl_dr": tl_dr[:300] if tl_dr else "",
+            "slide_count": len(slides),
+            "template": data.template,
+        }
+        if fp.stage == "mentor_done":
+            fp.stage = "deck_created"
+
+        db.commit()
+        _track("deck_imported_from_project", payload["sub"], deck.id, {"founder_project_id": fp.id})
+
+        return {
+            "project": {"id": project.id, "name": project.name},
+            "brief": {"id": brief.id},
+            "deck": _deck_dict(deck),
+            "founder_project_stage": fp.stage,
+        }
+    finally:
+        db.close()
+
+
+def _founder_project_dict(p: FounderProject) -> dict:
+    return {
+        "id": p.id, "title": p.title, "stage": p.stage,
+        "mentor_notes": p.mentor_notes, "deck_id": p.deck_id,
+        "deck_summary": p.deck_summary, "deal_id": p.deal_id,
+        "deal_data": p.deal_data, "contract_id": p.contract_id,
+        "contract_data": p.contract_data,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+        "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+    }
 
 
 @app.get("/api/stats")

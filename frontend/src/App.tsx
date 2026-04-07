@@ -133,6 +133,22 @@ export default function App() {
     return null
   }
 
+  async function importFromFounderProject(projectId: string, template: string = 'clean') {
+    if (!token) return
+    setLoading(true)
+    try {
+      const r = await fetch(`${API}/founder-projects/import`, {
+        method: 'POST', headers: authHeaders(token),
+        body: JSON.stringify({ project_id: projectId, template }),
+      })
+      if (r.ok) {
+        const data = await r.json()
+        setActiveDeck(data.deck); setView('deck-view')
+      }
+    } catch { /* ignore */ }
+    setLoading(false)
+  }
+
   async function finalizeDeck(deckId: string) {
     if (!token) return false
     const r = await fetch(`${API}/decks/${deckId}/finalize`, {
@@ -207,7 +223,7 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         {view === 'home' && <HomePage onNavigate={navigate} />}
-        {view === 'projects' && <ProjectsPage projects={projects} onCreate={createProject} onOpen={openProject} />}
+        {view === 'projects' && <ProjectsPage projects={projects} onCreate={createProject} onOpen={openProject} onImportFromProject={importFromFounderProject} token={token} loading={loading} />}
         {view === 'project-detail' && activeProject && (
           <ProjectDetailPage project={activeProject} onCreateBrief={createBrief} onGenerateDeck={generateDeck} onOpenDeck={openDeck} onBack={() => navigate('projects')} loading={loading} />
         )}
@@ -285,20 +301,62 @@ function HomePage({ onNavigate }: { onNavigate: (v: View) => void }) {
 
 // ── Projects ──────────────────────────────────────────────────────────────
 
-function ProjectsPage({ projects, onCreate, onOpen }: {
+function ProjectsPage({ projects, onCreate, onOpen, onImportFromProject, token, loading }: {
   projects: Project[]; onCreate: (n: string, i: string, s: string) => void; onOpen: (id: string) => void
+  onImportFromProject: (projectId: string, template: string) => void; token: string | null; loading: boolean
 }) {
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState(''); const [industry, setIndustry] = useState(''); const [stage, setStage] = useState('seed')
+  const [founderProjects, setFounderProjects] = useState<Array<{id: string; title: string; stage: string; mentor_notes: Record<string, string> | null}>>([])
+  const [showImport, setShowImport] = useState(false)
+
+  useEffect(() => {
+    if (showImport && token) {
+      fetch(`${API}/founder-projects`, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
+        .then(r => r.json()).then(d => setFounderProjects(d.projects || [])).catch(() => {})
+    }
+  }, [showImport, token])
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">My Projects</h1>
-        <button onClick={() => setShowForm(!showForm)} className="text-sm bg-orange-600 hover:bg-orange-500 px-3 py-1.5 rounded-lg text-white transition flex items-center gap-1">
-          <Plus size={14} /> New Project
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowImport(!showImport)} className="text-sm bg-violet-600 hover:bg-violet-500 px-3 py-1.5 rounded-lg text-white transition flex items-center gap-1">
+            <Download size={14} /> Import from Mentor
+          </button>
+          <button onClick={() => setShowForm(!showForm)} className="text-sm bg-orange-600 hover:bg-orange-500 px-3 py-1.5 rounded-lg text-white transition flex items-center gap-1">
+            <Plus size={14} /> New Project
+          </button>
+        </div>
       </div>
+      {showImport && (
+        <div className="bg-[#12121a] border border-violet-500/30 rounded-xl p-4 space-y-3">
+          <div className="text-sm font-medium text-violet-400">Import from Founder Project</div>
+          <p className="text-xs text-gray-500">Select a project with mentor notes to auto-generate a pitch deck.</p>
+          {founderProjects.length === 0 ? (
+            <p className="text-xs text-gray-500">No founder projects found. Start a session in MentorForge and export it first.</p>
+          ) : (
+            <div className="space-y-2">
+              {founderProjects.filter(p => p.mentor_notes).map(fp => (
+                <div key={fp.id} className="flex items-center justify-between bg-[#0a0a0f] border border-gray-800 rounded-lg p-3">
+                  <div>
+                    <div className="text-sm text-white font-medium">{fp.title}</div>
+                    <div className="text-xs text-gray-500">
+                      Mentor: {fp.mentor_notes?.mentor_name || 'Unknown'} &middot; Stage: {fp.stage}
+                    </div>
+                  </div>
+                  <button onClick={() => { onImportFromProject(fp.id, 'clean'); setShowImport(false) }}
+                    disabled={loading}
+                    className="text-xs bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg transition">
+                    {loading ? 'Generating...' : 'Generate Deck'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {showForm && (
         <form onSubmit={e => { e.preventDefault(); if (name) { onCreate(name, industry, stage); setName(''); setShowForm(false) } }} className="bg-[#12121a] border border-gray-800 rounded-xl p-4 flex gap-3">
           <input type="text" placeholder="Project name" value={name} onChange={e => setName(e.target.value)} required className="flex-1 px-3 py-2 bg-[#0a0a0f] border border-gray-800 rounded-lg text-sm text-white focus:outline-none focus:border-orange-500" />
