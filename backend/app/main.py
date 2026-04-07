@@ -517,6 +517,9 @@ def import_from_founder_project(data: ImportFromProjectRequest, payload: dict = 
         db.add(brief)
         db.flush()
 
+        # Ensure the project relationship is loaded for _generate_deck_content
+        brief.project = project
+
         # Generate deck from the seeded brief
         slides, tl_dr, script = _generate_deck_content(brief, data.template)
         deck = Deck(
