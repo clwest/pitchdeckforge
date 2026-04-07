@@ -531,13 +531,15 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
         pdf.setTextColor(209, 213, 219)
         const bullets = s.bullets || []
         const totalChars = bullets.reduce((sum: number, b: string) => sum + b.length, 0)
-        const fontSize = totalChars > 1200 ? 9 : totalChars > 800 ? 10 : totalChars > 500 ? 11 : bullets.length > 5 ? 12 : 14
-        const lineHeight = fontSize * 1.4
-        const maxLinesPerBullet = bullets.length <= 3 ? 8 : bullets.length <= 5 ? 6 : 4
+        // Aggressive sizing for dense slides — prevent overflow
+        const fontSize = totalChars > 1500 ? 8 : totalChars > 1000 ? 9 : totalChars > 600 ? 10 : totalChars > 400 ? 11 : bullets.length > 5 ? 11 : 13
+        const lineHeight = fontSize * 1.5
+        // Narrower wrap width to prevent right-edge overflow (jsPDF font metrics are wider than expected)
+        const wrapWidth = fontSize <= 9 ? 780 : fontSize <= 10 ? 800 : 830
         pdf.setFontSize(fontSize)
-        let y = 115
+        let y = 110
         for (const bullet of bullets) {
-          if (y > 500) {
+          if (y > 490) {
             // Overflow: add continuation page
             pdf.addPage([960, 540], 'landscape')
             pdf.setFillColor(18, 18, 26)
@@ -547,12 +549,13 @@ function DeckViewPage({ deck, onBack, onRegenerateSlide, onUpdateSlide, onAddBon
             pdf.text(`${s.title} (continued)`, 48, 40)
             pdf.setTextColor(209, 213, 219)
             pdf.setFontSize(fontSize)
-            y = 70
+            y = 65
           }
-          const lines = pdf.splitTextToSize(`  •  ${bullet}`, 850)
-          const clampedLines = lines.slice(0, maxLinesPerBullet)
-          pdf.text(clampedLines, 48, y)
-          y += clampedLines.length * lineHeight + 5
+          // Clean special chars that cause wide-spacing in jsPDF
+          const clean = bullet.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ')
+          const lines = pdf.splitTextToSize(`  •  ${clean}`, wrapWidth)
+          pdf.text(lines, 48, y)
+          y += lines.length * lineHeight + 4
         }
 
         // Speaker notes inline (bottom of slide, subtle)
