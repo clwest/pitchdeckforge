@@ -144,8 +144,12 @@ export default function App() {
       if (r.ok) {
         const data = await r.json()
         setActiveDeck(data.deck); setView('deck-view')
+      } else {
+        const err = await r.text().catch(() => 'Unknown error')
+        console.error('Import failed:', r.status, err)
+        alert(`Import failed: ${r.status}`)
       }
-    } catch { /* ignore */ }
+    } catch (e) { console.error('Import error:', e) }
     setLoading(false)
   }
 
