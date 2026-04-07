@@ -55,6 +55,8 @@ class Brief(Base):
     traction = Column(Text, nullable=True)
     team = Column(Text, nullable=True)
     raise_amount = Column(String, nullable=True)
+    target_market = Column(Text, nullable=True)
+    business_model = Column(Text, nullable=True)
     audience = Column(String, default="seed")  # seed, series_a, growth
     created_at = Column(DateTime, default=utcnow)
     project = relationship("Project", back_populates="briefs")
@@ -105,4 +107,11 @@ def init_db(url="sqlite:///./pitchdeckforge.db"):
                 conn.execute(text("ALTER TABLE users ADD COLUMN stripe_subscription_id VARCHAR"))
             if "stripe_customer_id" not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR"))
+    if inspector.has_table("briefs"):
+        existing = {c["name"] for c in inspector.get_columns("briefs")}
+        with engine.begin() as conn:
+            if "target_market" not in existing:
+                conn.execute(text("ALTER TABLE briefs ADD COLUMN target_market TEXT"))
+            if "business_model" not in existing:
+                conn.execute(text("ALTER TABLE briefs ADD COLUMN business_model TEXT"))
     return engine

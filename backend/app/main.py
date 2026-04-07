@@ -58,6 +58,7 @@ class BriefCreate(BaseModel):
     company_description: str
     problem: str = ""; solution: str = ""; traction: str = ""
     team: str = ""; raise_amount: str = ""; audience: str = "seed"
+    target_market: str = ""; business_model: str = ""
 
 class GenerateDeckRequest(BaseModel):
     template: str = "clean"
@@ -226,6 +227,7 @@ def create_brief(project_id: str, data: BriefCreate, payload: dict = Depends(dec
             company_description=data.company_description, problem=data.problem,
             solution=data.solution, traction=data.traction, team=data.team,
             raise_amount=data.raise_amount, audience=data.audience,
+            target_market=data.target_market, business_model=data.business_model,
         )
         db.add(brief); db.commit(); db.refresh(brief)
         return _brief_dict(brief)
@@ -493,6 +495,8 @@ def _generate_deck_content(brief: Brief, template: str) -> tuple[list, str, str]
 Company: {brief.company_description}
 Problem: {brief.problem or 'Not specified'}
 Solution: {brief.solution or 'Not specified'}
+Target Market: {brief.target_market or 'Not specified'}
+Business Model: {brief.business_model or 'Not specified'}
 Traction: {brief.traction or 'Not specified'}
 Team: {brief.team or 'Not specified'}
 Raise: {brief.raise_amount or 'Not specified'}

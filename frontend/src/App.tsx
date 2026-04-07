@@ -333,7 +333,7 @@ function ProjectDetailPage({ project, onCreateBrief, onGenerateDeck, onOpenDeck,
   onBack: () => void; loading: boolean
 }) {
   const [showBriefForm, setShowBriefForm] = useState(false)
-  const [form, setForm] = useState({ company_description: '', problem: '', solution: '', traction: '', team: '', raise_amount: '', audience: 'seed' })
+  const [form, setForm] = useState({ company_description: '', problem: '', solution: '', traction: '', team: '', raise_amount: '', audience: 'seed', target_market: '', business_model: '' })
 
   const TEMPLATES = [
     { id: 'clean', label: 'Clean & Minimal', color: 'text-gray-400' },
@@ -399,7 +399,9 @@ function ProjectDetailPage({ project, onCreateBrief, onGenerateDeck, onOpenDeck,
             { key: 'company_description', label: 'Company Description *', type: 'textarea', placeholder: 'What does your company do? (2-3 sentences)' },
             { key: 'problem', label: 'Problem', type: 'textarea', placeholder: 'What problem are you solving?' },
             { key: 'solution', label: 'Solution', type: 'textarea', placeholder: 'How do you solve it?' },
-            { key: 'traction', label: 'Traction', type: 'text', placeholder: 'Key metrics: users, revenue, growth rate' },
+            { key: 'target_market', label: 'Target Market', type: 'textarea', placeholder: 'Who are your customers? Market size?' },
+            { key: 'business_model', label: 'Business Model', type: 'textarea', placeholder: 'How do you make money? Pricing, revenue streams' },
+            { key: 'traction', label: 'Traction', type: 'textarea', placeholder: 'Key metrics: users, revenue, growth rate' },
             { key: 'team', label: 'Team', type: 'text', placeholder: 'Key team members and backgrounds' },
             { key: 'raise_amount', label: 'Raise Amount', type: 'text', placeholder: 'e.g. $2M' },
           ].map(f => (
