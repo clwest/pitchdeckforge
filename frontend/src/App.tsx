@@ -330,6 +330,8 @@ function ProjectsPage({ projects, onCreate, onOpen, onImportFromProject, token, 
   const [name, setName] = useState(''); const [industry, setIndustry] = useState(''); const [stage, setStage] = useState('seed')
   const [founderProjects, setFounderProjects] = useState<Array<{id: string; title: string; stage: string; mentor_notes: Record<string, string> | null}>>([])
   const [showImport, setShowImport] = useState(false)
+  const [previewProject, setPreviewProject] = useState<{id: string; title: string; mentor_notes: Record<string, string> | null} | null>(null)
+  const [previewTemplate, setPreviewTemplate] = useState('clean')
 
   useEffect(() => {
     if (showImport && token) {
@@ -343,7 +345,7 @@ function ProjectsPage({ projects, onCreate, onOpen, onImportFromProject, token, 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">My Projects</h1>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowImport(!showImport)} className="text-sm bg-violet-600 hover:bg-violet-500 px-3 py-1.5 rounded-lg text-white transition flex items-center gap-1">
+          <button onClick={() => { setShowImport(!showImport); setPreviewProject(null) }} className="text-sm bg-violet-600 hover:bg-violet-500 px-3 py-1.5 rounded-lg text-white transition flex items-center gap-1">
             <Download size={14} /> Import from Mentor
           </button>
           <button onClick={() => setShowForm(!showForm)} className="text-sm bg-orange-600 hover:bg-orange-500 px-3 py-1.5 rounded-lg text-white transition flex items-center gap-1">
@@ -354,26 +356,83 @@ function ProjectsPage({ projects, onCreate, onOpen, onImportFromProject, token, 
       {showImport && (
         <div className="bg-[#12121a] border border-violet-500/30 rounded-xl p-4 space-y-3">
           <div className="text-sm font-medium text-violet-400">Import from Founder Project</div>
-          <p className="text-xs text-gray-500">Select a project with mentor notes to auto-generate a pitch deck.</p>
-          {founderProjects.length === 0 ? (
-            <p className="text-xs text-gray-500">No founder projects found. Start a session in MentorForge and export it first.</p>
-          ) : (
-            <div className="space-y-2">
-              {founderProjects.filter(p => p.mentor_notes).map(fp => (
-                <div key={fp.id} className="flex items-center justify-between bg-[#0a0a0f] border border-gray-800 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Select a project to preview mentor notes, then generate your pitch deck.</p>
+
+          {/* Project list */}
+          {!previewProject && (
+            <>
+              {founderProjects.length === 0 ? (
+                <p className="text-xs text-gray-500">No founder projects found. Start a session in MentorForge and export it first.</p>
+              ) : (
+                <div className="space-y-2">
+                  {founderProjects.filter(p => p.mentor_notes).map(fp => (
+                    <button key={fp.id} onClick={() => setPreviewProject(fp)}
+                      className="w-full text-left flex items-center justify-between bg-[#0a0a0f] border border-gray-800 rounded-lg p-3 hover:border-violet-500/40 transition">
+                      <div>
+                        <div className="text-sm text-white font-medium">{fp.title}</div>
+                        <div className="text-xs text-gray-500">
+                          Mentor: {fp.mentor_notes?.mentor_name || 'Unknown'} &middot; Stage: {fp.stage}
+                        </div>
+                      </div>
+                      <ChevronRight size={16} className="text-gray-600" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Preview panel */}
+          {previewProject && (
+            <div className="space-y-4">
+              <button onClick={() => setPreviewProject(null)} className="text-xs text-gray-400 hover:text-white flex items-center gap-1"><ArrowLeft size={12} /> Back to projects</button>
+
+              <div className="bg-[#0a0a0f] border border-gray-800 rounded-lg p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-white">{previewProject.title}</h3>
+
+                {/* Mentor notes preview */}
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-sm text-white font-medium">{fp.title}</div>
-                    <div className="text-xs text-gray-500">
-                      Mentor: {fp.mentor_notes?.mentor_name || 'Unknown'} &middot; Stage: {fp.stage}
-                    </div>
+                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Topic / Description</label>
+                    <div className="text-sm text-gray-300 mt-1 bg-[#12121a] rounded p-2 border border-gray-800">{previewProject.mentor_notes?.topic || previewProject.title}</div>
                   </div>
-                  <button onClick={() => { onImportFromProject(fp.id, 'clean'); setShowImport(false) }}
+                  <div>
+                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Mentor</label>
+                    <div className="text-sm text-gray-300 mt-1 bg-[#12121a] rounded p-2 border border-gray-800">{previewProject.mentor_notes?.mentor_name || 'Unknown'}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Key Feedback</label>
+                    <div className="text-sm text-gray-300 mt-1 bg-[#12121a] rounded p-2 border border-gray-800 max-h-24 overflow-y-auto">{previewProject.mentor_notes?.key_feedback || 'No feedback captured'}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] text-gray-500 uppercase tracking-wider">Summary</label>
+                    <div className="text-sm text-gray-300 mt-1 bg-[#12121a] rounded p-2 border border-gray-800">{previewProject.mentor_notes?.summary || 'No summary'}</div>
+                  </div>
+                </div>
+
+                {/* Template picker */}
+                <div>
+                  <label className="text-[10px] text-gray-500 uppercase tracking-wider">Deck Template</label>
+                  <div className="flex gap-2 mt-1">
+                    {['clean', 'investor', 'growth', 'product'].map(t => (
+                      <button key={t} onClick={() => setPreviewTemplate(t)}
+                        className={`text-xs px-3 py-1.5 rounded-lg transition capitalize ${previewTemplate === t ? 'bg-orange-600 text-white' : 'bg-[#12121a] border border-gray-800 text-gray-400 hover:text-white hover:border-orange-500/30'}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Generate button */}
+                <div className="flex items-center justify-between pt-2 border-t border-gray-800">
+                  <p className="text-xs text-gray-500">AI will generate a 10-slide deck from these notes using the {previewTemplate} template.</p>
+                  <button onClick={() => { onImportFromProject(previewProject.id, previewTemplate); setShowImport(false); setPreviewProject(null) }}
                     disabled={loading}
-                    className="text-xs bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg transition">
-                    {loading ? 'Generating...' : 'Generate Deck'}
+                    className="bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                    <Sparkles size={14} /> {loading ? 'Generating Deck...' : 'Generate Deck'}
                   </button>
                 </div>
-              ))}
+              </div>
             </div>
           )}
         </div>
