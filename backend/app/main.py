@@ -92,6 +92,14 @@ def health():
 class BrainAskRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    # Session 1128 Phase 2B — optional fleet routing fields. When any of
+    # mode/agent/role is set, brain_client builds a `routing` block on
+    # the u-d-b /api/pa/chat/ payload so the Phase 2A dispatcher can
+    # force-route (or hint-route) to a specific u-d-b AGENT_MAP key.
+    # Allowlist per app lives in u-d-b's config/fleet_agent_routing.json.
+    agent: Optional[str] = None
+    role: Optional[str] = None
+    mode: Optional[str] = None
 
 
 @app.post("/api/brain/ask")
@@ -104,6 +112,10 @@ def brain_ask(req: BrainAskRequest, payload: dict = Depends(decode_token)):
         conversation_id=req.conversation_id,
         workspace="pitchdeckforge",
         user_id=payload.get("sub"),
+        app_slug="pitchdeckforge",
+        agent=req.agent,
+        role=req.role,
+        mode=req.mode,
     )
     if not result.get("ok"):
         raise HTTPException(502, result.get("error", "brain unreachable"))
