@@ -18,7 +18,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-pitchdeckforge}
       POSTGRES_USER: ${POSTGRES_USER:-pitchdeckforge}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pitchdeckforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
     volumes:
       - pitchdeckforge_postgres_data:/var/lib/postgresql/data
     networks:
@@ -39,7 +39,7 @@ services:
       pitchdeckforge_postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-pitchdeckforge}:${POSTGRES_PASSWORD:-pitchdeckforge}@pitchdeckforge_postgres:5432/${POSTGRES_DB:-pitchdeckforge}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pitchdeckforge}:${POSTGRES_PASSWORD:-change-me-in-production}@pitchdeckforge_postgres:5432/${POSTGRES_DB:-pitchdeckforge}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-gpt-5-mini}
       SECRET_KEY: ${SECRET_KEY:-dev-only-rotate-me}
