@@ -84,6 +84,32 @@ def health():
     return {"status": "healthy", "service": "PitchDeckForge"}
 
 
+# ── Brain bridge ───────────────────────────────────────────────────────────
+# Proxies a freeform question to unified-donkey-betz's Personal Assistant
+# (Rigby) and returns the deliberated answer. Brain client config is read
+# from env at call time — see app/brain_client.py.
+
+class BrainAskRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+
+
+@app.post("/api/brain/ask")
+def brain_ask(req: BrainAskRequest, payload: dict = Depends(decode_token)):
+    from app.brain_client import ask
+    if not req.message.strip():
+        raise HTTPException(400, "message is required")
+    result = ask(
+        req.message,
+        conversation_id=req.conversation_id,
+        workspace="pitchdeckforge",
+        user_id=payload.get("sub"),
+    )
+    if not result.get("ok"):
+        raise HTTPException(502, result.get("error", "brain unreachable"))
+    return result
+
+
 def _track(event_type: str, user_id: str = None, resource_id: str = None, metadata: dict = None):
     db = SessionLocal()
     try:
