@@ -3,7 +3,7 @@ import {
   Presentation, Plus, ChevronRight, ChevronLeft, ArrowLeft,
   LogIn, LogOut, FileText, Sparkles, Copy, Clock,
   Download, RefreshCw, Pencil, Check, X, Loader2,
-  CreditCard, Share2, Lock, Zap, Users, Star,
+  CreditCard, Share2, Lock, Zap, Users, Star, Send,
 } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 
@@ -16,7 +16,7 @@ interface Deck extends DeckSummary { slides: Slide[]; tl_dr: string; script: str
 interface Slide { title: string; bullets: string[]; notes: string }
 interface AuthUser { id: string; email: string; name: string }
 
-type View = 'home' | 'projects' | 'project-detail' | 'brief-form' | 'deck-view' | 'login' | 'register' | 'pricing' | 'shared-deck'
+type View = 'home' | 'projects' | 'project-detail' | 'brief-form' | 'deck-view' | 'login' | 'register' | 'pricing' | 'shared-deck' | 'brain'
 
 function authHeaders(token: string) {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
@@ -229,6 +229,7 @@ export default function App() {
             <Presentation size={20} className="text-orange-500" /> PitchDeckForge
           </button>
           <div className="flex items-center gap-4">
+            <button onClick={() => navigate('brain')} className="text-sm text-gray-400 hover:text-white transition" title="Ask Rigby (u-d-b PA)">Brain</button>
             <button onClick={() => navigate('pricing')} className="text-sm text-gray-400 hover:text-white transition">Pricing</button>
             {token && user ? (
               <>
@@ -253,6 +254,7 @@ export default function App() {
         )}
         {view === 'deck-view' && activeDeck && <DeckViewPage deck={activeDeck} onBack={() => activeProject ? openProject(activeProject.id) : navigate('projects')} onRegenerateSlide={regenerateSlide} onUpdateSlide={updateSlide} onAddBonusSlide={addBonusSlide} onFinalize={finalizeDeck} />}
         {view === 'pricing' && <PricingPage onNavigate={navigate} />}
+        {view === 'brain' && <BrainPage token={token} onLogin={() => navigate('login')} />}
         {view === 'login' && <AuthPage mode="login" onLogin={handleLogin} onSwitch={() => navigate('register')} />}
         {view === 'register' && <AuthPage mode="register" onRegister={handleRegister} onSwitch={() => navigate('login')} />}
       </main>
@@ -1124,6 +1126,90 @@ function AuthPage({ mode, onLogin, onRegister, onSwitch }: {
           <button onClick={onSwitch} className="text-orange-400 hover:text-orange-300">{mode === 'login' ? 'Sign Up' : 'Sign In'}</button>
         </p>
       </div>
+    </div>
+  )
+}
+
+// ── Brain bridge page ─────────────────────────────────────────────────────
+// Proxies a freeform question to unified-donkey-betz's Personal Assistant
+// (Rigby) via this app's POST /api/brain/ask endpoint.
+
+function BrainPage({ token, onLogin }: { token: string | null; onLogin: () => void }) {
+  const [message, setMessage] = useState('')
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [traceId, setTraceId] = useState<string | null>(null)
+  const [latency, setLatency] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function ask() {
+    if (!token) { onLogin(); return }
+    if (!message.trim()) return
+    setLoading(true); setAnswer(null); setError(null); setTraceId(null); setLatency(null)
+    try {
+      const r = await fetch(`${API}/brain/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message }),
+      })
+      const d = await r.json()
+      if (!r.ok) {
+        setError(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail || d))
+      } else {
+        setAnswer(d.answer || '(no answer field returned)')
+        setTraceId(d.trace_id || null)
+        setLatency(d.latency_ms ?? null)
+      }
+    } catch (e: any) {
+      setError(e.message || 'request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <h1 className="text-3xl font-bold text-white mb-2">Brain</h1>
+      <p className="text-gray-400 mb-6">
+        Ask Rigby (the u-d-b Personal Assistant) anything. PitchDeckForge proxies your question
+        through the fleet brain bridge and returns her deliberated response.
+      </p>
+      {!token && (
+        <div className="mb-4 p-3 rounded-lg bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 text-sm">
+          Sign in first — the bridge requires an authenticated session.
+        </div>
+      )}
+      <textarea
+        value={message}
+        onChange={e => setMessage(e.target.value)}
+        placeholder="Ask anything — Rigby has u-d-b's full agent network behind her."
+        className="w-full h-32 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:border-orange-500 focus:outline-none"
+      />
+      <button
+        onClick={ask}
+        disabled={loading || !message.trim()}
+        className="mt-3 px-5 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-white font-medium transition flex items-center gap-2"
+      >
+        <Send size={16} />
+        {loading ? 'Thinking...' : 'Ask Rigby'}
+      </button>
+      {error && (
+        <div className="mt-6 p-4 rounded-lg bg-red-900/30 border border-red-700/50 text-red-200 text-sm whitespace-pre-wrap">
+          <div className="font-medium text-red-300 mb-1">Brain unreachable</div>
+          {error}
+        </div>
+      )}
+      {answer && (
+        <div className="mt-6">
+          <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 text-gray-100 whitespace-pre-wrap">{answer}</div>
+          {(traceId || latency !== null) && (
+            <div className="mt-2 text-xs text-gray-500 flex gap-4">
+              {traceId && <span>trace: {traceId}</span>}
+              {latency !== null && <span>latency: {latency}ms</span>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
