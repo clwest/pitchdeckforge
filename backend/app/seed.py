@@ -1,9 +1,14 @@
 """PitchDeckForge — Seed demo data"""
+import os
+from dotenv import load_dotenv
+load_dotenv()
 from sqlalchemy.orm import sessionmaker
 from app.models import User, Project, Brief, init_db, get_engine
 from app.auth import hash_password
 
-DATABASE_URL = "sqlite:///./pitchdeckforge.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./pitchdeckforge.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 def seed():
     engine = get_engine(DATABASE_URL)

@@ -1,0 +1,21 @@
+# Keep build context clean — host artifacts must not leak into images
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local SQLite databases (we use Postgres in compose; SQLite stays on host)
+*.db
+*.db-journal
+
+# Local env files — secrets stay outside the image
+.env
+.env.local
+.env.*.local
+
+# Editor / OS junk
+.DS_Store
+.idea/
+.vscode/
