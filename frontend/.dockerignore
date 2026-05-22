@@ -1,0 +1,15 @@
+# Keep build context lean — these would balloon the upload and aren't
+# needed at image-build time
+node_modules/
+dist/
+.vite/
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / OS junk
+.DS_Store
+.idea/
+.vscode/
